@@ -79,11 +79,11 @@ while True:
                         toros_fields = Priority.toros_field_generator(Configuration.FIELD_SIZE)
 
                         # generate a ranked list of toros fields within the skymap
-                        toros_fields_prio = Priority.sort_toros_fields_skymap(toros_fields, skymap)
+                        toros_fields_prio = Priority.sort_toros_fields_skymap(toros_fields, skymap, event_name)
                         toros_fields_prio.to_csv(Configuration.ALERTS_DIRECTORY +
                                                  event_name +
                                                  '_SkyMap_toros_fields.txt',
-                                                 sep=',')
+                                                 sep=' ', index=False)
 
                         Utils.log("TOROS field list generated based on SkyMap from GCN. "
                                   "Waiting 5 minutes to re-query NED.", "info")
@@ -104,7 +104,7 @@ while True:
                             ligo_fields.to_csv(Configuration.ALERTS_DIRECTORY +
                                                event_name +
                                                '_NED_toros_fields.txt',
-                                               sep=',')
+                                               sep=' ', index=False)
                             continue
                     else:
                         Utils.log("TOROS field list already generated from SkyMap. Skipping for now and "
@@ -121,7 +121,8 @@ while True:
                             toros_fields = Priority.toros_field_generator(Configuration.FIELD_SIZE)
                             ligo_fields = Priority.return_toros_fields(ned_result, toros_fields)
                             ligo_fields.to_csv(Configuration.ALERTS_DIRECTORY +
-                                               event_name + '_NED_toros_fields.txt', sep=',')
+                                               event_name + '_NED_toros_fields.txt',
+                                               sep=' ', index=False)
                             continue
 
                 else:
@@ -135,7 +136,8 @@ while True:
             toros_fields = Priority.toros_field_generator(Configuration.FIELD_SIZE)
             ligo_fields = Priority.return_toros_fields(ned_result, toros_fields)
 
-            ligo_fields.to_csv(Configuration.ALERTS_DIRECTORY + event_name + '_NED_toros_fields.txt', sep=',')
+            ligo_fields.to_csv(Configuration.ALERTS_DIRECTORY + event_name + '_NED_toros_fields.txt',
+                               sep=' ', index=False)
             continue
 
         Utils.log("Maximum iterations for NED reached.", "info")

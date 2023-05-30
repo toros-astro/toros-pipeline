@@ -3,9 +3,27 @@
 from config import Configuration
 import logging
 import os
-
+from datetime import datetime, time
 
 class Utils:
+
+    @staticmethod
+    def is_time_between(begin_time, end_time):
+        """ This function will check to see if the current time is between the provided times. This function was taken
+        from https://stackoverflow.com/questions/10048249/how-do-i-determine-if-current-time-is-within-a-specified-range
+        -using-pythons-da
+
+        :parameter begin_time - The star time for the check
+        :parameter end_time - The end time for the check
+
+        return: True or False is returned
+        """
+        # If check time is not given, default to current UTC time
+        check_time = datetime.now().time()
+        if begin_time < end_time:
+            return (check_time >= begin_time) and (check_time <= end_time)
+        else:  # crosses midnight
+            return (check_time >= begin_time) or (check_time <= end_time)
 
     @staticmethod
     def log(statement, level):

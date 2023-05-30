@@ -21,19 +21,16 @@ from ligo.skymap.postprocess import crossmatch
 class Priority:
 
     @staticmethod
-    def sort_toros_fields_skymap(toros_fields, skymap):
+    def sort_toros_fields_skymap(toros_fields, skymap, event_name):
         """ This function will generate a prioritized list of toros fields based on the provided SkyMap when no NED
         result is available.
 
         :parameter toros_fields - This is the standard set of TOROS fields
         :parameter skymap - The skymap output directly from the NED alert
+        :parameter event_name - The name of the LIGO event for each reference later
 
         :return selected_fields - A list of fields within the skymap banana sorted by declination and priority
         """
-
-        # get the resolution of the healpy map
-        npix = len(skymap)
-        nside = hp.npix2nside(npix)
 
         # copy the data frame so we don't ruin the OG data
         selected_fields = toros_fields.copy().reset_index(drop=True)
@@ -49,7 +46,7 @@ class Priority:
 
         # sort all TOROS fields based on the probability strip
         selected_fields = selected_fields.sort_values(by='prob', ascending=False).copy().reset_index(drop=True)
-
+        selected_fields['program'] = 'lvc_alert_' + event_name
         return selected_fields
 
     @staticmethod
@@ -228,7 +225,6 @@ class Priority:
         moon = toros.moon_altaz(time=time_now)
         obj_altaz = field_c.transform_to(AltAz(obstime=time_now, location=observatory))
         obj_hadec = field_c.transform_to(HADec(obstime=time_now, location=observatory))
-        targets_exp = toros.altaz(time_now, field_c)
 
         # make sure that the moon is above the horizon before we settle on dark time
         if (moon.alt.value > 0) & (moon_bright == 1):
