@@ -516,9 +516,9 @@ class Priority:
             c = SkyCoord(ra=0.e0, dec=-90e0, frame='icrs', unit='deg')
             toros_fields = pd.DataFrame(data=[['00.000', 0e0, -90e0,
                                                c.galactic.l.to_value(), c.galactic.b.to_value(),
-                                               'main_survey', 300., 1, 0, 0]],
+                                               'main_survey', 300., 1, 0, 0, 0, 0]],
                                         columns=['toros_field_id', 'ra', 'dec', 'l', 'b', 'program', 'exposure_time',
-                                                 'cadence', 'ephemeris', 'period'])
+                                                 'cadence', 'ephemeris', 'period', 'observations', 'moon_phase'])
 
             # set up the TOROS field of view
             toros_fov = Configuration.PIXEL_SIZE * Configuration.NUM_PIXELS / 3600.
