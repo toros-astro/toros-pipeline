@@ -622,7 +622,7 @@ class Priority:
         # signal_20mag_source = signal_0mag_source * (10.0 ** (20.0/(-2.5)))
         signal_specific_source = signal_0mag_source * (10.0 ** (ab_brightness/(-2.5)))
         signal_sky = (10 ** (np.array(Configuration.SKY) / (-2.5)) * telescope_aperture * signal_0mag_source)
-        readnoise_aperture = Configuration.READOUT_NOISE ** 2 * (telescope_aperture / (0.468 ** 2))
+        readnoise_aperture = Configuration.READOUT_NOISE ** 2 * (telescope_aperture / (Configuration.PIXEL_SIZE ** 2))
 
         # calculate the snr
         snr_per_band = signal_specific_source / ((signal_specific_source +
