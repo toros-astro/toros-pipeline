@@ -111,13 +111,13 @@ class Configuration:
     # observing conditions
     SEEING = 0.93  # assumes 2 pix FWHM
 
-    # sky brightness at TOLAR
+    # sky brightness at TOLAR in SDSS griz
     SKY = [22.1, 21.1, 20.1, 18.7]
 
-    # bandpass values in nm
+    # SDSS griz bandpass values in nm (width of the filter)
     BP = [147, 141, 147, 147]
 
-    # cwl
+    # SDSS griz central wavelength
     CWL = [473.5, 638.5, 775.5, 922.5]
 
     # telescope information
