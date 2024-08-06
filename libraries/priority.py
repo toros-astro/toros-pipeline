@@ -526,10 +526,9 @@ class Priority:
 
             # set up variables necessary for geometry
             deg_to_rad = np.pi / 180.  # degree to radians conversion
-            field_sep = toros_fov * np.sqrt(2.2 ** 2 + 3.73 ** 2) / 5.0
 
             # separation of the fields in declination
-            declination_strips = -90 + np.arange(0, toros_field_number) * field_sep
+            declination_strips = -90 + np.arange(0, toros_field_number) * field_size
 
             # now loop through and generate the fields
             eo = 0
