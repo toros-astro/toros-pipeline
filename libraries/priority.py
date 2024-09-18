@@ -3,7 +3,6 @@
 from config import Configuration
 import numpy as np
 import pandas as pd
-import healpy as hp
 from libraries.utils import Utils
 from astropy.coordinates import SkyCoord, AltAz, HADec
 from astroplan import Observer
@@ -13,9 +12,10 @@ from astropy.time import Time
 from datetime import timedelta
 import os
 import matplotlib
+
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-from ligo.skymap.postprocess import crossmatch
+# from ligo.skymap.postprocess import crossmatch
 
 
 class Priority:
@@ -39,10 +39,10 @@ class Priority:
         field_coords = SkyCoord(selected_fields.ra, selected_fields.dec, unit=u.deg)
 
         # now crossmatch the TOROS fields with the sky map probabilities
-        cross_match = crossmatch(skymap, field_coords)
+        # cross_match = crossmatch(skymap, field_coords)
 
         # now move through each TOROS field and get the integrated area within the field area
-        selected_fields['prob'] = cross_match.probdensity
+        # selected_fields['prob'] = cross_match.probdensity
 
         # sort all TOROS fields based on the probability strip
         selected_fields = selected_fields.sort_values(by='prob', ascending=False).copy().reset_index(drop=True)
@@ -88,7 +88,7 @@ class Priority:
 
     @staticmethod
     def return_toros_fields(target_list, toros_fields):
-        """ This function will return the unique toros fields for a given set of coordiantes
+        """ This function will return the unique toros fields for a given set of coordinates
 
         :parameter target_list - A pandas data frame with the target list
         :parameter toros_fields - A pandas data frame with the toros fields
@@ -166,27 +166,43 @@ class Priority:
         return ang_dist_deg
 
     @staticmethod
-    def find_toros_field(toros_fields, ra, dec):
+    def find_toros_field(toros_fields, ra, dec, ang_extend=0, program='main_survey'):
         """ This function will select the appropriate TOROS field based on the RA/Dec of the target you are interested
         in observing.
 
         :parameter toros_fields - The set of TOROS survey fields
         :parameter ra - The right ascension of the target in degrees
         :parameter dec - The declination of the target in degrees
-
+        :parameter ang_extend - If this is an extended object, provide its angular extension to grab more than one
+                                TOROS field. This assumes a circular extension.
+        :parameter program - If the input is something other than 'main_survey' the program is overwritten
         return field - The TOROS field name to be observed for the specific science
         """
 
         # get the angular distance between the given position and the toros fields
-        ang_dist = toros_fields.apply(lambda x: Priority.angular_distance(x.ra, x.dec, ra, dec), axis=1)
+        ang_dist = toros_fields.apply(lambda x: Priority.angular_distance(np.float(x.ra),
+                                                                          np.float(x.dec),
+                                                                          ra, dec), axis=1)
 
-        if np.min(ang_dist) <= 2:
-            # pull out the field row
-            field = toros_fields.loc[np.argmin(ang_dist)].copy()
+        if ang_extend != 0:
+            if len(toros_fields[ang_dist < ang_extend]) > 0:
+                fields = toros_fields[ang_dist < ang_extend].copy()
+                ang_dists = ang_dist[ang_dist < ang_extend]
+                if program != 'main_survey':
+                    fields['program'] = program
+            else:
+                fields = 'No field found.'
         else:
-            field = 'No field found.'
+            if np.min(ang_dist) <= Configuration.FOV / 2:
+                # pull out the field row
+                fields = toros_fields.loc[np.argmin(ang_dist)].copy()
+                ang_dists = np.argmin(ang_dist)
+                if program != 'main_survey':
+                    fields['program'] = program
+            else:
+                fields = 'No field found.'
 
-        return field
+        return fields, ang_dists
 
     @staticmethod
     def toros_field_selector(survey_fields):
@@ -206,7 +222,8 @@ class Priority:
         toros = Observer(location=observatory, name='TOROS', timezone='America/Argentina/Salta')
 
         # get the field positions
-        field_c = SkyCoord(ra=survey_fields['ra'].to_list(), dec=survey_fields['dec'].to_list(),
+        field_c = SkyCoord(ra=survey_fields['ra'].to_list(),
+                           dec=survey_fields['dec'].to_list(),
                            frame='icrs', unit='deg')
 
         # get the current time
@@ -219,7 +236,7 @@ class Priority:
             moon_bright = 0
 
         # the priority order for field types
-        field_priority = ['lvc', 'main_survey']
+        field_priority = ['commissioning', 'lvc', 'main_survey']
 
         # get the current moon
         moon = toros.moon_altaz(time=time_now)
@@ -260,20 +277,20 @@ class Priority:
         return field
 
     @staticmethod
-    def toros_night_field_selector(survey_fields, science_fields, hc_fields):
+    def toros_night_field_selector(survey_fields, commissioning_fields, field_select='airmass'):
         """ This function will select fields for tonight based on the current UTC, moon, ligo alert etc.
 
         :parameter survey_fields - The full set of survey fields with current observing history.
-        :parameter science_fields - The full set of science fields with priority
-        :parameter hc_fields - The set of high cadence fields with priority & cadence requirements
-        :parameter ligo_fields - The set of alert ligo fields
+        :parameter commissioning_fields - The full set of commissioning fields to choose from
 
         :return obs_list - The list of fields to observe tonight (in order)
 
         """
 
         # merge the lists together to make a giant list selection
-        toros_fields = survey_fields.append([science_fields, hc_fields]).reset_index(drop=True)
+        # toros_fields = survey_fields.append([science_fields, hc_fields]).reset_index(drop=True)
+        # toros_fields = pd.concat([survey_fields, commissioning_fields]).reset_index(drop=True)
+        toros_fields = commissioning_fields.copy()
 
         # set up the Macon Parameters
         location = EarthLocation.from_geodetic(Configuration.TOROS_LONGITUDE * u.deg,
@@ -285,8 +302,8 @@ class Priority:
         field_c = SkyCoord(ra=toros_fields.ra.to_list(), dec=toros_fields.dec.to_list(), frame='icrs', unit='deg')
 
         # get the time for the evening hours
-        jd_start = toros.tonight(horizon=-6 * u.deg)[0]
-        jd_end = toros.tonight(horizon=-6 * u.deg)[1]
+        jd_start = toros.tonight(horizon=-12 * u.deg)[0]
+        jd_end = toros.tonight(horizon=-12 * u.deg)[1]
 
         # get the moon information
         if toros.moon_illumination(jd_start) >= 0.5:
@@ -295,8 +312,10 @@ class Priority:
             moon_bright = 0
 
         time_of_exp = jd_start
-        field_priority = ['ligo', 'science', 'survey', 'high_cadence']
+        field_priority = ['commissioning', 'ligo', 'science', 'main_survey', 'high_cadence']
 
+        n_exposure = 0
+        f = open("C:\\Users\\ryanj\\Development\\toros\\analysis\\nightly_observing_list.txt", 'w')
         while time_of_exp < jd_end:
             moon = toros.moon_altaz(time=time_of_exp)
             targets_exp = toros.altaz(time_of_exp, field_c)
@@ -308,66 +327,90 @@ class Priority:
                 moon_phase = 0
 
             # update the hour angles for the expected exposure time
-            toros_fields['field_ha_exp'] = toros.target_hour_angle(time_of_exp, field_c)
-            toros_fields['airmass_exp'] = targets_exp.secz
-            toros_fields['altitude_exp'] = targets_exp.alt
-            toros_fields['azimuth_exp'] = targets_exp.az
+            toros_fields['field_ha_exp'] = toros.target_hour_angle(time_of_exp, field_c).value
+            toros_fields['airmass_exp'] = targets_exp.secz.value
+            toros_fields['altitude_exp'] = targets_exp.alt.value
+            toros_fields['azimuth_exp'] = targets_exp.az.value
             toros_fields['horizon_exp'] = toros.target_is_up(time_of_exp, field_c)
 
             # get the possible fields based on observing cadences
-            possible_fields = toros_fields[((toros_fields.field_ha_exp < 5) |
-                                            ((toros_fields.airmass_exp >= 1) &
-                                             (toros_fields.airmass_exp <= 2))) &
-                                           (toros_fields.moon_phase == moon_phase) &
-                                           (toros_fields.observations == toros_fields.observations.min())].sort_values(by=['dec'],
+            possible_fields = toros_fields[((toros_fields.airmass_exp >= 1) &  (toros_fields.airmass_exp <= 3)) &
+                                           (toros_fields.moon_phase == moon_phase)].sort_values(by=['dec'],
                                                                                                 ascending=True)
 
             # look for ligo alerts, then science fields, then survey fields, then high cadence fields
             for prio in field_priority:
-                field_chk = possible_fields[possible_fields['field_type'] == prio]
+                field_chk = possible_fields[possible_fields['program'] == prio]
 
-                if len(field_chk) > 1:
+                if len(field_chk) >= 1:
 
                     # get the alt and az of the positions of the fields, assuming the moon is up
-                    #if moon_phase == 1:
-                    #    field_chk['moon_dist'] = field_chk.apply(lambda x: Priority.angular_distance(
-                    #        x.azimuth_exp, x.altitude_exp, moon.az.value, moon.alt.value), axis=1)
-                    #else:
-                    #    field_chk['moon_dist'] = Configuration.MOON_DISTANCE + 10.
+                    # if moon_phase == 1:
+                    #     field_chk['moon_dist'] = field_chk.apply(lambda x: Priority.angular_distance(
+                    #         x.azimuth_exp, x.altitude_exp, moon.az.value, moon.alt.value), axis=1)
+                    # else:
+                    #     field_chk['moon_dist'] = Configuration.MOON_DISTANCE + 10.
 
                     #if len(field_chk[field_chk['moon_dist'] > Configuration.MOON_DISTANCE]) > 0:
+                    if field_select == 'airmass':
+                        field_chk = field_chk[field_chk.airmass_exp == field_chk.airmass_exp.min()]
+                    else:
+                        field_chk = field_chk[field_chk.observations == field_chk.observations.min()]
 
                     field = field_chk.index[0]
                     toros_fields.loc[field, 'observations'] += 1
 
-                    next_exp = time_of_exp + timedelta(days=toros_fields.loc[field, 'cadence'])
+                    next_exp = time_of_exp + timedelta(seconds=int(toros_fields.loc[field, 'exposure_time'] +
+                                                                   Configuration.OVERHEAD + Configuration.READ_TIME))
                     time_of_exp = next_exp
+
+                    if n_exposure == 0:
+                        obs_list = pd.DataFrame([field_chk.iloc[0]]).reset_index(drop=True)
+                    else:
+                        obs_list = pd.concat([obs_list, field_chk], axis=0).reset_index(drop=True)
+
+                    obs_time = Time((time_of_exp.value + Configuration.UTC/24.), format='jd')
+
+                    if n_exposure == 0:
+                        header = 'date time toros_field_id ra dec exp_time airmass program\n'
+                        f.write(header)
+                    line = obs_time.iso + ' ' + str(field_chk.toros_field_id.values[0]) + ' ' + \
+                           str(field_chk.ra.values[0]) + ' ' + str(field_chk.dec.values[0]) + ' ' + \
+                           str(int(field_chk.exposure_time.values[0])) + ' ' + \
+                           str(np.around(field_chk.airmass_exp.values[0], decimals=2)) + ' ' + \
+                           field_chk.program.values[0] + '\n'
+                    f.write(line)
+
+                    n_exposure = n_exposure + 1
                     break
+        f.close()
+        print('hold')
+
+    @staticmethod
+    def plot_toros_observations(toros_fields):
 
         plt.figure(figsize=(32, 24))
         plt.subplot(111, projection="aitoff")
         toros_fields['ra_wrap'] = np.where(toros_fields.ra > 180, toros_fields.ra - 360, toros_fields.ra)
         plt.scatter(toros_fields[toros_fields.moon_phase == 0].ra_wrap * np.pi / 180,
-                    toros_fields[toros_fields.moon_phase == 0].dec * np.pi / 180, s=80, edgecolors='b', facecolors='none', label='Dark Time', alpha=0.2)
+                    toros_fields[toros_fields.moon_phase == 0].dec * np.pi / 180, s=80,
+                    edgecolors='b', facecolors='none', label='Dark Time', alpha=0.2)
         plt.scatter(toros_fields[toros_fields.moon_phase == 1].ra_wrap * np.pi / 180,
-                    toros_fields[toros_fields.moon_phase == 1].dec * np.pi / 180,  s=80, edgecolors='g', facecolors='none',label='Bright Time', alpha=0.2)
-        plt.scatter(toros_fields[toros_fields.field_type == 'science'].ra_wrap * np.pi / 180,
-                    toros_fields[toros_fields.field_type == 'science'].dec * np.pi / 180,  s=80, edgecolors='r', facecolors='none',label='Science Fields', alpha=0.2)
-        plt.scatter(toros_fields[toros_fields.field_type == 'high_cadence'].ra_wrap * np.pi / 180,
-                    toros_fields[toros_fields.field_type == 'high_cadence'].dec * np.pi / 180,  s=80, edgecolors='k', facecolors='none',label='High Cadence', alpha=0.2)
+                    toros_fields[toros_fields.moon_phase == 1].dec * np.pi / 180,  s=80,
+                    edgecolors='g', facecolors='none',label='Bright Time', alpha=0.2)
+        plt.scatter(toros_fields[toros_fields.program == 'commissioning'].ra_wrap * np.pi / 180,
+                    toros_fields[toros_fields.program == 'commissioning'].dec * np.pi / 180,  s=80,
+                    edgecolors='r', facecolors='none',label='Commissioning Fields', alpha=0.2)
         plt.grid(True)
 
-        plt.scatter(toros_fields[(toros_fields.observations >= 1) & (toros_fields.field_type == 'science')].ra_wrap * np.pi / 180,
-                    toros_fields[(toros_fields.observations >= 1) & (toros_fields.field_type == 'science')].dec * np.pi / 180.,
+        plt.scatter(toros_fields[(toros_fields.observations >= 1) & (toros_fields.program == 'commissioning')].ra_wrap * np.pi / 180,
+                    toros_fields[(toros_fields.observations >= 1) & (toros_fields.program == 'commissioning')].dec * np.pi / 180.,
                     c='r')
-        plt.scatter(toros_fields[(toros_fields.observations >= 1) & (toros_fields.field_type == 'high_cadence')].ra_wrap * np.pi / 180,
-                    toros_fields[(toros_fields.observations >= 1) & (toros_fields.field_type == 'high_cadence')].dec * np.pi / 180.,
-                    c='k')
-        plt.scatter(toros_fields[(toros_fields.moon_phase == 1) & (toros_fields.observations >= 1) & (toros_fields.field_type == 'survey')].ra_wrap * np.pi / 180,
-                    toros_fields[(toros_fields.moon_phase == 1) & (toros_fields.observations >= 1) & (toros_fields.field_type == 'survey')].dec * np.pi / 180.,
+        plt.scatter(toros_fields[(toros_fields.moon_phase == 1) & (toros_fields.observations >= 1) & (toros_fields.program == 'main_survey')].ra_wrap * np.pi / 180,
+                    toros_fields[(toros_fields.moon_phase == 1) & (toros_fields.observations >= 1) & (toros_fields.program == 'main_survey')].dec * np.pi / 180.,
                     c='g')
-        plt.scatter(toros_fields[(toros_fields.moon_phase == 0) & (toros_fields.observations >= 1) & (toros_fields.field_type == 'survey')].ra_wrap * np.pi / 180,
-                    toros_fields[(toros_fields.moon_phase == 0) & (toros_fields.observations >= 1) & (toros_fields.field_type == 'survey')].dec * np.pi / 180.,
+        plt.scatter(toros_fields[(toros_fields.moon_phase == 0) & (toros_fields.observations >= 1) & (toros_fields.program == 'main_survey')].ra_wrap * np.pi / 180,
+                    toros_fields[(toros_fields.moon_phase == 0) & (toros_fields.observations >= 1) & (toros_fields.program == 'main_survey')].dec * np.pi / 180.,
                     c='b')
         plt.xlabel('Right Ascension [deg]')
         plt.ylabel('Declination [deg]')
@@ -378,11 +421,10 @@ class Priority:
         return
 
     @staticmethod
-    def toros_survey_simulator(toros_fields, ligo_fields):
+    def toros_survey_simulator(toros_fields):
         """ This function will select the fields to observe based on the current UTC.
 
         :parameter toros_fields - The set of TOROS survey fields
-        :parameter ligo_fields - The set of LIGO fields from NED to be used for observing
 
         :return fields_to_observe - The selection of fields to observe, in priority order
         """
@@ -405,8 +447,8 @@ class Priority:
             dte = jd_st+timedelta(days=ngt)
 
             # get the time for the evening hours
-            jd_start = toros.tonight(time=dte, horizon=-6 * u.deg)[0]
-            jd_end = toros.tonight(time=dte, horizon=-6 * u.deg)[1]
+            jd_start = toros.tonight(time=dte, horizon=-12 * u.deg)[0]
+            jd_end = toros.tonight(time=dte, horizon=-12 * u.deg)[1]
 
             # get the moon information
             if toros.moon_illumination(jd_start) >= 0.5:
@@ -416,8 +458,6 @@ class Priority:
 
             time_of_exp = jd_start
             total_exp_time = Configuration.TOTAL_EXPOSURE / 60. / 60. / 24.
-
-            n_iters = 0
 
             while time_of_exp < jd_end:
                 next_exp = time_of_exp + timedelta(days=total_exp_time)
@@ -432,29 +472,29 @@ class Priority:
                     moon_phase = 0
 
                 # update the hour angles for the expected exposure time
-                toros_fields['field_ha_exp'] = toros.target_hour_angle(time_of_exp, field_c)
-                toros_fields['airmass_exp'] = targets_exp.secz
-                toros_fields['altitude_exp'] = targets_exp.alt
-                toros_fields['azimuth_exp'] = targets_exp.az
+                toros_fields['field_ha_exp'] = toros.target_hour_angle(time_of_exp, field_c).value
+                toros_fields['airmass_exp'] = targets_exp.secz.value
+                toros_fields['altitude_exp'] = targets_exp.alt.value
+                toros_fields['azimuth_exp'] = targets_exp.az.value
                 toros_fields['horizon_exp'] = toros.target_is_up(time_of_exp, field_c)
 
                 # update the hour angles for the next expected exposure time
-                toros_fields['field_ha_next_exp'] = toros.target_hour_angle(next_exp, field_c)
-                toros_fields['airmass_next_exp'] = targets_next_exp.secz
-                toros_fields['altitude_next_exp'] = targets_next_exp.alt
-                toros_fields['azimuth_next_exp'] = targets_next_exp.az
+                toros_fields['field_ha_next_exp'] = toros.target_hour_angle(next_exp, field_c).value
+                toros_fields['airmass_next_exp'] = targets_next_exp.secz.value
+                toros_fields['altitude_next_exp'] = targets_next_exp.alt.value
+                toros_fields['azimuth_next_exp'] = targets_next_exp.az.value
                 toros_fields['horizon_next_exp'] = toros.target_is_up(next_exp, field_c)
 
                 # get the possible fields based on observing cadences
-                possible_fields = toros_fields[(((toros_fields.field_ha_exp < 5) |
-                                                 (toros_fields.airmass_exp > 21)) &
-                                                (toros_fields.airmass_exp < 2)) &
+                possible_fields = toros_fields[(((toros_fields.field_ha_exp.to_numpy() < 5) |
+                                                 (toros_fields.airmass_exp.to_numpy() > 21)) &
+                                                (toros_fields.airmass_exp.to_numpy() < 2)) &
                                                (((toros_fields.field_ha_next_exp < 5) |
                                                 (toros_fields.airmass_next_exp > 21)) &
                                                (toros_fields.airmass_next_exp < 2)) &
                                                (toros_fields.observations == toros_fields.observations.min()) &
                                                (toros_fields.moon_phase == moon_phase)].sort_values(by=['dec'],
-                                                                                                    ascending=True)
+                                                                                                    ascending=True).copy()
 
                 # get the alt and az of the positions of the fields, assuming the moon is up
                 if moon_phase == 1:
@@ -478,7 +518,7 @@ class Priority:
                 else:
                     time_of_exp = next_exp
 
-            if (ngt % 30 == 0) & (ngt > 0):
+            if (ngt % 10 == 0) & (ngt > 0):
                 plt.figure()
                 plt.subplot(111, projection="aitoff")
                 toros_fields['ra_wrap'] = np.where(toros_fields.ra > 180, toros_fields.ra - 360, toros_fields.ra)
@@ -509,7 +549,7 @@ class Priority:
         """
 
         if os.path.isfile(Configuration.ANALYSIS_DIRECTORY + 'toros_fields.dat') is False or \
-                Configuration.FEILD_GENERATION == 'Y':
+                Configuration.FIELD_GENERATION == 'Y':
             Utils.log("Now generating TOROS fields.", "info")
 
             # set up the TOROS fields data frames and start with the first field
@@ -521,7 +561,6 @@ class Priority:
                                                  'cadence', 'ephemeris', 'period', 'observations', 'moon_phase'])
 
             # set up the TOROS field of view
-            toros_fov = Configuration.PIXEL_SIZE * Configuration.NUM_PIXELS / 3600.
             toros_field_number = int(np.ceil((90 + Configuration.TOROS_DEC_LIMIT) / field_size))
 
             # set up variables necessary for geometry
@@ -532,6 +571,7 @@ class Priority:
 
             # now loop through and generate the fields
             eo = 0
+            field_cnt = 1
             for idx in range(1, toros_field_number):
                 nfr = np.ceil(360. * np.cos(declination_strips[idx] * deg_to_rad) / field_size)
                 ra_sep = 360. / nfr
@@ -576,7 +616,9 @@ class Priority:
                                              'cadence', 'ephemeris', 'period', 'observations', 'moon_phase'])
 
                     # append the series
-                    toros_fields = toros_fields.append(field, ignore_index=True)
+                    toros_fields.loc[field_cnt] = field
+                    field_cnt = field_cnt + 1
+                    # toros_fields = toros_fields.append(field, ignore_index=True) # depreciated method
 
             toros_fields.to_csv(Configuration.ANALYSIS_DIRECTORY + 'toros_fields.dat',
                                 sep=' ', header=True, index=False, float_format='%.3f')
