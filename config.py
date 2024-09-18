@@ -78,7 +78,7 @@ class Configuration:
     CIRC_ANNULI_OUTER = CIRC_APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/home/ryan.oelkers/Development/toros/"
+    WORKING_DIRECTORY = "/Users/ryanj/Development/toros/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -137,17 +137,19 @@ class Configuration:
     TOTAL_THROUGHPUT = CCD_QE * FILTER_QE * TELESCOPE_SEC_QE * TELECSCOPE_PRI_QE * VIGNETTING
 
     # telescope information
-    PIXEL_SIZE = 0.468  # arcsec per pixel
+    PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
     NUM_PIXELS = 10560  # pixels per side
-    TOROS_DEC_LIMIT = 33.84  # declination limit of the telescope in degrees
+    TOROS_DEC_LIMIT = 26.66  # declination limit of the telescope in degrees
 
     # force toros field generation?
-    FEILD_GENERATION = 'N'
-    FIELD_SIZE = 1.19
+    FIELD_GENERATION = 'N'
+    FOV = (PIXEL_SIZE * NUM_PIXELS) / 3600.
 
-    TOROS_LONGITUDE = -67.32833333
-    TOROS_LATITUDE = -24.62055556
-    TOROS_ELEVATION = 4650
+    # The Felix Aguilar Observatory is more Southern than Tolar
+    TOROS_LONGITUDE = -69.3265  # -67.32833333
+    TOROS_LATITUDE = -31.8023  # -24.62055556
+    TOROS_ELEVATION = 2420
+    UTC = -3
     MOON_DISTANCE = 60
 
     EXPOSURE_TIME = 300
