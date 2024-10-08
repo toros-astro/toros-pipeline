@@ -5,22 +5,20 @@ from config import Configuration
 import os
 import numpy as np
 from astropy.io import fits
-from astropy.stats import sigma_clipped_stats
 from photutils import CircularAperture
 from photutils import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
-
+from FITS_tools.hcongrid import hcongrid
 
 class BigDiff:
 
     @staticmethod
-    def difference_images(star_list, kernel_stars_og):
+    def difference_images(star_list):
         """ This function will generate the master frame and generates position files, or if a single frame is chosen,
         then only the position file are generated.
 
         :parameter star_list - A data frame with the aperture photometry from the master image
-        :parameter kernel_stars - The list of kernel stars used in the subtraction
 
         :return - Nothing is returned, however, the images are differenced
         """
@@ -31,11 +29,11 @@ class BigDiff:
         nfiles = len(files)
 
         # read in the master frame information
-        master = fits.getdata(Configuration.MASTER_DIRECTORY + "master.fits")
-        master_header = fits.getheader(Configuration.MASTER_DIRECTORY + "master.fits")
+        master, master_header = fits.getdata(Configuration.MASTER_DIRECTORY +
+                                             Configuration.FIELD +'_master' + Configuration.FILE_EXTENSION, header=True)
 
         # prepare the oisdifference.c file for differencing
-        BigDiff.prep_ois(master, master_header, len(kernel_stars_og))
+        BigDiff.prep_ois(master, master_header)
 
         # begin with the algorithm to difference the images
         for ii in range(0, nfiles):
@@ -70,10 +68,16 @@ class BigDiff:
         org_img, org_header = fits.getdata(file, header=True)
         img_sky_mean, img_sky_median, img_sky_std = sigma_clipped_stats(org_img, sigma=3.0)
 
+        # read in the master frame header to align the images
+        master_header = fits.getheader(Configuration.MASTER_DIRECTORY + Configuration.FIELD + "_master.fits")
+
         # write the new image file
         img_sbkg = org_img - img_sky_median
+        img_align = hcongrid(img_sbkg, org_header, master_header)
+        org_header['ALIGNED'] = 'Y'
+
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
-                     img_sbkg, org_header, overwrite=True)
+                     img_align, org_header, overwrite=True)
 
         # get the kernel stars for the subtraction
         kernel_stars = BigDiff.find_subtraction_stars_img(org_img, star_list)
@@ -108,10 +112,10 @@ class BigDiff:
         header['diffed'] = 'Y'
 
         # update the image with the new file header
-        fits.writeto('dimg.fits', dimg[0:Configuration.AXIS_Y, 0:Configuration.AXIS_X], header, overwrite=True)
+        fits.writeto('dimg.fits', dimg, header, overwrite=True)
 
         # move the differenced file to the difference directory
-        os.system('mv dimg.fits ' + Configuration.DIFFERENCED_DATE_DIRECTORY + '/' + out_name)
+        os.system('mv dimg.fits ' + Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + out_name)
 
         # change back to the working directory
         os.chdir(Configuration.WORKING_DIRECTORY)
@@ -121,7 +125,7 @@ class BigDiff:
         return
 
     @staticmethod
-    def prep_ois(master, master_header, n_kstars):
+    def prep_ois(master, master_header):
         """ This function will prepare the files necessary for the ois difference.
 
         :parameter master - The master image for differencing
@@ -148,8 +152,7 @@ class BigDiff:
 
         # prepare the text files
         # write the parameter file now that we have the stars
-        #Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'parms.txt', 'w', "%1d %1d %1d %4d\n" %
-        #                 (Configuration.STMP, Configuration.KRNL, Configuration.ORDR, n_kstars))
+
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'ref.txt', 'w', "ref.fits")
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.txt', 'w', "img.fits")
 
@@ -166,10 +169,11 @@ class BigDiff:
         Utils.log('Finding stars for kernel from the star list.', 'info')
 
         # now clip the stars to begin the subtraction
-        diff_list = star_list[(star_list['x'] > Configuration.AXS_LIMIT) &
-                              (star_list['x'] < Configuration.AXIS_X - Configuration.AXS_LIMIT) &
-                              (star_list['y'] > Configuration.AXS_LIMIT) &
-                              (star_list['y'] < Configuration.AXIS_Y - Configuration.AXS_LIMIT)].copy().reset_index(drop=True)
+        diff_list = star_list[(star_list['xcen'] > Configuration.AXS_LIMIT) &
+                              (star_list['xcen'] < Configuration.AXS_X - Configuration.AXS_LIMIT) &
+                              (star_list['ycen'] > Configuration.AXS_LIMIT) &
+                              (star_list['ycen'] < Configuration.AXS_Y - Configuration.AXS_LIMIT) &
+                              (star_list['master_mag_er'] < 0.2)].copy().reset_index(drop=True)
 
         if len(diff_list) > Configuration.NRSTARS:
             diff_list = diff_list.sample(n=Configuration.NRSTARS)
@@ -178,13 +182,14 @@ class BigDiff:
                       " in the subtraction. Using all available stars.", "info")
 
         # add 1 for indexing in C vs indexing in python
-        diff_list['x'] = np.around(diff_list['x'] + 1, decimals=0)
-        diff_list['y'] = np.around(diff_list['y'] + 1, decimals=0)
+        diff_list['x'] = np.around(diff_list['xcen'] + 1, decimals=0)
+        diff_list['y'] = np.around(diff_list['ycen'] + 1, decimals=0)
 
         # export the differencing stars
         diff_list[['x', 'y']].astype(int).to_csv(Configuration.CODE_DIFFERENCE_DIRECTORY +
-                                                 'refstars.txt', index=0, header=0, sep=" ")
-        diff_list[['star_id', 'x', 'y']].to_csv(Configuration.MASTER_DIRECTORY + "kernel_stars.txt",
+                                                 Configuration.FIELD + '_refstars.txt', index=0, header=0, sep=" ")
+        diff_list[['star_id', 'x', 'y']].to_csv(Configuration.MASTER_DIRECTORY +
+                                                Configuration.FIELD + '_kernel_stars.txt',
                                                 index=0, header=0, sep=" ")
         return diff_list
 
@@ -198,12 +203,12 @@ class BigDiff:
 
         Utils.log('Finding stars for kernel from the star list.', 'info')
 
-        positions = np.transpose((star_list['x'], star_list['y']))
+        positions = np.transpose((star_list['xcen'], star_list['ycen']))
 
-        aperture = CircularAperture(positions, r=Configuration.CIRC_APER_SIZE)
+        aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
         aperture_annulus = CircularAnnulus(positions,
-                                           r_in=Configuration.CIRC_ANNULI_INNER,
-                                           r_out=Configuration.CIRC_ANNULI_OUTER)
+                                           r_in=Configuration.ANNULI_INNER,
+                                           r_out=Configuration.ANNULI_OUTER)
         apers = [aperture, aperture_annulus]
 
         # run the photometry to get the data table
@@ -236,10 +241,10 @@ class BigDiff:
         mag_cut = md + sg
 
         # now clip the stars to begin the subtraction
-        diff_list = star_list[(star_list['x'] > Configuration.AXS_LIMIT) &
-                              (star_list['x'] < Configuration.AXIS_X - Configuration.AXS_LIMIT) &
-                              (star_list['y'] > Configuration.AXS_LIMIT) &
-                              (star_list['y'] < Configuration.AXIS_Y - Configuration.AXS_LIMIT) &
+        diff_list = star_list[(star_list['xcen'] > Configuration.AXS_LIMIT) &
+                              (star_list['xcen'] < Configuration.AXS_X - Configuration.AXS_LIMIT) &
+                              (star_list['ycen'] > Configuration.AXS_LIMIT) &
+                              (star_list['ycen'] < Configuration.AXS_Y - Configuration.AXS_LIMIT) &
                               (diff_list['min_dist'] > dist_cut) &
                               (diff_list['dmag'] < mag_cut)].copy().reset_index(drop=True)
 
@@ -250,8 +255,8 @@ class BigDiff:
                       " in the subtraction. Using all available stars.", "info")
 
         # add 1 for indexing in C vs indexing in python
-        diff_list['x'] = np.around(diff_list['x'] + 1, decimals=0)
-        diff_list['y'] = np.around(diff_list['y'] + 1, decimals=0)
+        diff_list['x'] = np.around(diff_list['xcen'] + 1, decimals=0)
+        diff_list['y'] = np.around(diff_list['ycen'] + 1, decimals=0)
 
         Utils.write_txt(Configuration.CODE_DIFFERENCE_DIRECTORY + 'parms.txt', 'w', "%1d %1d %1d %4d\n" %
                         (Configuration.STMP, Configuration.KRNL, Configuration.ORDR, len(diff_list)))

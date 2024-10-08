@@ -1,54 +1,168 @@
+from streamlit import header
+
 from config import Configuration
 from libraries.utils import Utils
 import numpy as np
 import os
-from FITS_tools.hcongrid import hcongrid
 import astropy
 import astropy.stats
 from astropy.nddata.utils import Cutout2D
-from astropy.wcs import WCS
+from astropy.time import Time
 from astropy.io import fits
-import scipy
-import scipy.ndimage
-from scipy.interpolate import Rbf
+from astropy import units as u
+from astropy.coordinates import SkyCoord
+import twirl
+from astropy.wcs import WCS
 from scipy.interpolate import griddata
-from scipy.interpolate import interpn
 import astroalign as aa
 import matplotlib
 matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 
 class Preprocessing:
 
     @staticmethod
-    def mk_bias(image_directory, dark="N", combine_type='median'):
-        """ This function will make the master bias frame using the provided image list.
+    def mk_bias(image_directory, bias_overwrite, combine_type='mean'):
+        """ This function will make the master bias frame using the provided image list and desired method.
         :parameter image_directory - a directory where the images reside for combination
-        :parameter dark - if the file being generated is a dark, update the name
-        :parameter combine_type - Either median or mean depending on how you want to combine the files
+        :parameter bias_overwrite - Y/N if you want to force an overwrite for the bias frame
+        :parameter combine_type - Right now the combination type is mean, but it can be updated for whatever you
+                                method is desired.
 
-        :return - The bias frame is returned and written to the master directory
+        :return - The bias frame is returned and written to the calibration directory
         """
 
-        if dark == 'Y':
-            file_name = 'dark' + Configuration.FILE_EXTENSION
-        else:
-            file_name = 'bias' + Configuration.FILE_EXTENSION
+        # set the master bias file name
+        file_name = 'bias' + Configuration.FILE_EXTENSION
 
-        if os.path.isfile(Configuration.MASTER_DIRECTORY + file_name) == 0:
+        if (os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0) | (bias_overwrite == 'Y'):
 
-            if combine_type == 'median':
+            if combine_type == 'mean':
                 # get the image list
                 image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
 
                 # determine the number of loops we need to move through for each image
                 nfiles = len(image_list)
-                nbulk = 20
+
+                # update the log
+                Utils.log("Generating a master bias frame from multiple files using a mean combination. There are "
+                          + str(nfiles) + " images to combine.", "info")
+
+                for kk in range(0, nfiles):
+                    # read in the bias frame
+                    bias_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + image_list[kk])
+
+                    # initialize if it is the first file, otherwise....
+                    if kk == 0:
+                        bias_image = bias_tmp
+                    else:
+                        bias_image = bias_image + bias_tmp
+
+                # generate the mean bias file
+                bias_image = bias_image / nfiles
+
+                # pull the header information from the first file of the set
+                bias_header = fits.getheader(Configuration.BIAS_DIRECTORY + image_list[0])
+
+                bias_header['BIAS_COMB'] = 'mean'
+                bias_header['NUM_BIAS'] = nfiles
+
+                # write the image out to the master directory
+                fits.writeto(Configuration.CALIBRATION_DIRECTORY + file_name,
+                             bias_image, bias_header, overwrite=True)
+            else:
+                Utils.log("Specific bias-combination method is not available, try again.", "info")
+        else:
+            bias_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
+
+        return bias_image
+
+    @staticmethod
+    def mk_dark(image_directory, overwrite_dark, combine_type='median'):
+        """ This function will make the master dark frame using the provided image list.
+        :parameter image_directory - a directory where the images reside for combination
+        :parameter overwrite_dark - Y/N if you want to force the current file to be overwritten
+        :parameter combine_type - Either median or mean depending on how you want to combine the files
+
+        :return - The dark frame is returned and written to the calibration directory
+        """
+
+        # make the file name
+        file_name = 'dark' + Configuration.FILE_EXTENSION
+
+        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0:
+
+            if combine_type == 'mean':
+                # get the image list
+                image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
+
+                # determine the number of loops we need to move through for each image
+                nfiles = len(image_list)
+
+                # pull in the bias frame
+                bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, bias_overwrite='N', combine_type='mean')
+
+                # update the log
+                Utils.log("Generating a master dark frame from multiple files using a mean combination. There are "
+                          + str(nfiles) + " images to combine.", "info")
+
+                for kk in range(0, nfiles):
+                    # read in the dark frame
+                    dark_tmp = fits.getdata(Configuration.DARKS_DIRECTORY + image_list[kk])
+
+                    # initialize if it is the first file, otherwise....
+                    if kk == 0:
+                        dark_image = dark_tmp - bias
+                    else:
+                        dark_image = (dark_image - bias) + dark_tmp
+
+                # generate the mean dark file
+                dark_image = dark_image / nfiles
+
+                # pull the header information from the first file of the set
+                dark_header = fits.getheader(Configuration.DARKS_DIRECTORY + image_list[0])
+
+                dark_header['DARK_COMB'] = 'mean'
+                dark_header['NUM_DARK'] = nfiles
+                dark_header['BIAS_SUBT'] = 'Y'
+
+                # write the image out to the master directory
+                fits.writeto(Configuration.CALIBRATION_DIRECTORY + file_name,
+                             dark_image, dark_header, overwrite=True)
+            else:
+                Utils.log("The dark-combination type requested is not allowed. Please try again.", "info")
+        else:
+            dark_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
+
+        return dark_image
+
+    @staticmethod
+    def mk_flat(image_directory, combine_type='mean'):
+        """ This function will make the master flat frame using the provided image list.
+        :parameter image_directory - a directory where the images reside for combination
+        :parameter combine_type - Mean/Median depending on how you want to combine the flat frame
+
+        :return - The flat field for the given date is returned and written to the calibration directory
+        """
+
+        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits") == 0:
+
+            # read in the bias file
+            bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, bias_overwrite='N', combine_type='mean')
+
+            # get the image list
+            image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
+
+            if combine_type == 'median':
+
+                # determine the number of loops we need to move through for each image
+                nfiles = len(image_list)
+                nbulk = 6
 
                 # get the integer and remainder for the combination
                 full_bulk = nfiles // nbulk
                 part_bulk = nfiles % nbulk
+
                 if part_bulk > 0:
                     hold_bulk = full_bulk + 1
                 else:
@@ -58,7 +172,7 @@ class Preprocessing:
                 hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_X, Configuration.AXS_Y))
 
                 # update the log
-                Utils.log("Generating a master bias/dark frame from multiple files in bulks of " + str(nbulk) +
+                Utils.log("Generating a master flat field from multiple files in bulks of " + str(nbulk) +
                           " images. There are " + str(nfiles) + " images to combine, which means there should be " +
                           str(hold_bulk) + " mini-files to combine.", "info")
 
@@ -82,20 +196,22 @@ class Preprocessing:
                     loop_start = kk * nbulk
                     idx_cnt = 0
 
-                    Utils.log("Making mini-bias/dark file " + str(kk) + ".", "info")
+                    Utils.log("Making mini-flat field frame number " + str(kk) + ".", "info")
 
                     # now loop through the images
                     for jj in range(loop_start, mx_index + loop_start):
-                        # read in the image directly into the block_hold
-                        if dark == 'Y':
-                            bias_tmp = fits.getdata(Configuration.DARKS_DIRECTORY + image_list[jj])
-                        else:
-                            bias_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + image_list[jj])
 
-                        if np.ndim(bias_tmp) > 2:
-                            bias_tmp = bias_tmp[0]
+                        # read in the flat file
+                        flat_tmp, flat_head = fits.getdata(image_directory  + image_list[jj], header=True)
 
-                        block_hold[idx_cnt] = bias_tmp
+                        # remove the bias frame from the temporary flat field
+                        flat_tmp_bias = flat_tmp - bias
+
+                        # clip the flat field
+                        flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
+
+                        # put the image into the block_hold
+                        block_hold[idx_cnt] = flat_tmp_bias_clip
 
                         # increase the iteration
                         idx_cnt += 1
@@ -104,118 +220,123 @@ class Preprocessing:
                     hold_data[kk] = np.median(block_hold, axis=0)
 
                 # median the mini-images into one large image
-                bias_image = np.median(hold_data, axis=0)
+                flat_image = np.median(hold_data, axis=0)
+                nflat_image = flat_image / np.median(flat_image[5280:5280 + 5280, 2640:2640 + 1320])
+
+                # what are the sizes of each chip (not including the over scan)?
+                # chip_x_size = 1320
+                # chip_y_size = 5280
+
+                # move through x and y
+                # for x in range(0, Configuration.AXS_X, chip_x_size):
+                #     for y in range(0, Configuration.AXS_Y, chip_y_size):
+                #         # put the clipped image into the holder image
+                #         nflat_image[y:y + chip_y_size, x:x + chip_x_size] = (
+                #                 flat_image[y:y + chip_y_size, x:x + chip_x_size] /
+                #                 np.median(flat_image[y:y + chip_y_size, x:x + chip_x_size]))
 
                 # pull the header information from the first file of the set
-                if dark == 'Y':
-                    bias_header = fits.getheader(Configuration.DARKS_DIRECTORY + image_list[0])
-                else:
-                    bias_header = fits.getheader(Configuration.BIAS_DIRECTORY + image_list[0])
-                bias_header['BIAS_COMB'] = 'median'
-                bias_header['NUM_BIAS'] = nfiles
-                bias_header["BIASSUB"] = 'Y'
+                flat_header = fits.getheader(image_directory + image_list[0])
+                flat_header['comb_typ'] = 'median'
+                flat_header['norm_pix'] = 'median'
+                flat_header['num_comb'] = len(image_list)
+                flat_header['mean_pix'] = np.mean(nflat_image)
+                flat_header['std_pix'] = np.std(nflat_image)
+                flat_header['max_pix'] = np.max(nflat_image)
+                flat_header['min_pix'] = np.min(nflat_image)
+                flat_header['mean'] = np.mean(flat_image)
+                flat_header['std'] = np.std(flat_image)
+                flat_header['max'] = np.max(flat_image)
+                flat_header['min'] = np.min(flat_image)
 
                 # write the image out to the master directory
-                fits.writeto(Configuration.MASTER_DIRECTORY + file_name,
-                             bias_image, bias_header, overwrite=True)
+                fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits",
+                             nflat_image, flat_header, overwrite=True)
             else:
-                # get the image list
-                image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
+                # here is the 'holder'
+                hold_data = np.zeros((Configuration.AXS_X, Configuration.AXS_Y))
 
-                # determine the number of loops we need to move through for each image
-                nfiles = len(image_list)
+                Utils.log("Making the flat frame using a mean combination.", "info")
 
-                # update the log
-                Utils.log("Generating a master bias/dark frame from multiple files using a mean combination. There are "
-                          + str(nfiles) + " images to combine.", "info")
+                # now loop through the images
+                for idx, image in enumerate(image_list):
 
-                for kk in range(0, nfiles):
-                    # read in the bias frame
-                    bias_tmp = fits.getdata(Configuration.DARKS_DIRECTORY + image_list[kk])
+                    # read in the flat file
+                    flat_tmp, flat_head = fits.getdata(image_directory + image, header=True)
 
-                    # initialize if its the first file, otherwise....
-                    if kk == 0:
-                        bias_image = bias_tmp
-                    else:
-                        bias_image = bias_image + bias_tmp
+                    # remove the bias frame from the temporary flat field
+                    flat_tmp_bias = flat_tmp - bias
 
-                # generate the mean bias file
-                bias_image = bias_image / nfiles
+                    # clip the flat field
+                    flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
+
+                    # read in the image directly into the block_hold
+                    hold_data += flat_tmp_bias_clip
+
+                # median the mini-images into one large image
+                flat_image = hold_data / float(len(image_list))
+                nflat_image = flat_image / np.median(flat_image)
 
                 # pull the header information from the first file of the set
-                if dark == 'Y':
-                    bias_header = fits.getheader(Configuration.DARKS_DIRECTORY + image_list[0])
-                else:
-                    bias_header = fits.getheader(Configuration.BIAS_DIRECTORY + image_list[0])
-
-                bias_header['BIAS_COMB'] = 'mean'
-                bias_header['NUM_BIAS'] = nfiles
-                bias_header["BIASSUB"] = 'Y'
+                flat_header = fits.getheader(image_directory + image_list[0])
+                flat_header['comb_typ'] = 'mean'
+                flat_header['norm_pix'] = 'median'
+                flat_header['num_comb'] = len(image_list)
+                flat_header['mean_pix'] = np.mean(nflat_image)
+                flat_header['std_pix'] = np.std(nflat_image)
+                flat_header['max_pix'] = np.max(nflat_image)
+                flat_header['min_pix'] = np.min(nflat_image)
+                flat_header['mean'] = np.mean(flat_image)
+                flat_header['std'] = np.std(flat_image)
+                flat_header['max'] = np.max(flat_image)
+                flat_header['min'] = np.min(flat_image)
 
                 # write the image out to the master directory
-                fits.writeto(Configuration.MASTER_DIRECTORY + file_name,
-                             bias_image, bias_header, overwrite=True)
+                fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits",
+                             nflat_image, flat_header, overwrite=True)
         else:
-            bias_image = fits.getdata(Configuration.MASTER_DIRECTORY + file_name, 0)
-
-        return bias_image
-
-    @staticmethod
-    def mk_flat(image_directory):
-        """ This function will make the master flat frame using the provided image list.
-        :parameter image_directory - a directory where the images reside for combination
-
-        :return - The bias frame is returned and written to the master directory
-        """
-
-        if os.path.isfile(Configuration.MASTER_DIRECTORY + "_flat" + ".fits") == 0:
-
-            # read in the bias file
-            bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY)
-
-            # get the image list
-            image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
-
-            # here is the 'holder'
-            hold_data = np.zeros((Configuration.AXS_X, Configuration.AXS_Y))
-
-            Utils.log("Making the flat frame using a mean.", "info")
-
-            # now loop through the images
-            for idx, image in enumerate(image_list):
-                # read in the flat file
-                flat_tmp = fits.getdata(image_directory + "\\" + image, 0)
-                if np.ndim(flat_tmp) > 2:
-                    flat_tmp = flat_tmp[0]
-
-                # read in the image directly into the block_hold
-                hold_data += flat_tmp - bias
-
-            # median the mini-images into one large image
-            flat_image = hold_data / float(len(image_list))
-            nflat_image = flat_image / np.median(flat_image)
-
-            # pull the header information from the first file of the set
-            flat_header = fits.getheader(image_directory + "\\" + image_list[0])
-            flat_header['comb_typ'] = 'mean'
-            flat_header['norm_pix'] = 'mean'
-            flat_header['num_comb'] = len(image_list)
-            flat_header['mean_pix'] = np.mean(nflat_image)
-            flat_header['std_pix'] = np.std(nflat_image)
-            flat_header['max_pix'] = np.max(nflat_image)
-            flat_header['min_pix'] = np.min(nflat_image)
-            flat_header['mean'] = np.mean(flat_image)
-            flat_header['std'] = np.std(flat_image)
-            flat_header['max'] = np.max(flat_image)
-            flat_header['min'] = np.min(flat_image)
-
-            # write the image out to the master directory
-            fits.writeto(Configuration.CALIBRATION_DATE_DIRECTORY + Configuration.DATE + "_flat" + Configuration.FILE_EXTENSION,
-                         nflat_image, flat_header, overwrite=True)
-        else:
-            nflat_image = fits.getdata(Configuration.CALIBRATION_DATE_DIRECTORY + Configuration.DATE + "_flat" + Configuration.FILE_EXTENSION, 0)
+            nflat_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits")
 
         return nflat_image
+
+    @staticmethod
+    def correct_header(img, header):
+        """ This function will plate solve the image, add the time stamp, and exposure time to the header if need be.
+
+        :parameter img - This is the image you want to plate solve
+        :parameter header - the header of the image you want to correct
+
+        return img, header - The corrected image will be sent back
+        """
+
+        # get the approximate center of the image
+        center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
+        pixel = Configuration.PIXEL_SIZE * u.arcsec
+        fov = np.max(np.shape(img)) * pixel.to(u.deg)
+
+        # now query the gaia region
+        all_stars = twirl.gaia_radecs(center, 1.25 * fov)
+
+        # keep the isolated stars
+        all_stars = twirl.geometry.sparsify(all_stars, 0.01)
+
+        # get the stars in the image
+        xy = twirl.find_peaks(img)
+
+        # now compute the new wcs
+        wcs = twirl.compute_wcs(xy[0:20], all_stars[0:20], tolerance=10)
+
+        # add the WCS to the header
+        h = wcs.to_header()
+
+        for idx, v in enumerate(h):
+            header[v] = (h[idx], h.comments[idx])
+
+        # add additional information such as exposure time and time of exposure
+        header['EXP_TIME'] = Configuration.EXP_TIME
+        header['DATE-OBS'] = Time.now().iso
+
+        return img, header
 
     @staticmethod
     def sky_subtract(img, header, sky_write='N'):
@@ -234,11 +355,8 @@ class Preprocessing:
         lop = 2 * Configuration.PIX
 
         # size holder for later
-        sze = int((Configuration.AXIS_X / Configuration.PIX) * (Configuration.AXIS_Y / Configuration.PIX) +
-                  (Configuration.AXIS_X / Configuration.PIX) + (Configuration.AXIS_Y / Configuration.PIX) + 1)
-
-        # generate an empty matrix to hold the background
-        res = np.zeros(shape=(Configuration.AXIS_Y, Configuration.AXIS_X))
+        sze = int((Configuration.AXS_X / Configuration.PIX) * (Configuration.AXS_Y / Configuration.PIX) +
+                  (Configuration.AXS_X / Configuration.PIX) + (Configuration.AXS_Y / Configuration.PIX) + 1)
 
         # calculate the sky statistics
         sky_mean, sky_median, sky_sig = astropy.stats.sigma_clipped_stats(img, sigma=2.5)
@@ -251,19 +369,19 @@ class Preprocessing:
         nd = int(0)
 
         # begin the sampling of the "local" sky value
-        for jj in range(0, Configuration.AXIS_X + Configuration.PIX, Configuration.PIX):
-            for kk in range(0, Configuration.AXIS_Y + Configuration.PIX, Configuration.PIX):
+        for jj in range(0, Configuration.AXS_X + Configuration.PIX, Configuration.PIX):
+            for kk in range(0, Configuration.AXS_Y + Configuration.PIX, Configuration.PIX):
                 il = np.amax([jj - lop, 0])
-                ih = np.amin([jj + lop, Configuration.AXIS_X - 1])
+                ih = np.amin([jj + lop, Configuration.AXS_X - 1])
                 jl = np.amax([kk - lop, 0])
-                jh = np.amin([kk + lop, Configuration.AXIS_Y - 1])
+                jh = np.amin([kk + lop, Configuration.AXS_Y - 1])
                 c = img[jl:jh, il:ih]
 
                 # select the median value with clipping
                 lsky_mean, lsky, ssky = astropy.stats.sigma_clipped_stats(c, sigma=2.5)
 
-                x[nd] = np.amin([jj, Configuration.AXIS_X - 1])  # determine the pixel to input
-                y[nd] = np.amin([kk, Configuration.AXIS_Y - 1])  # determine the pixel to input
+                x[nd] = np.amin([jj, Configuration.AXS_X - 1])  # determine the pixel to input
+                y[nd] = np.amin([kk, Configuration.AXS_Y - 1])  # determine the pixel to input
                 v[nd] = lsky  # median sky
                 s[nd] = ssky  # sigma sky
                 nd = nd + 1
@@ -328,8 +446,8 @@ class Preprocessing:
                 v[rj[jj]] = ave
 
         # set up a meshgrid to interpolate to
-        xi = np.linspace(0, Configuration.AXIS_X - 1, Configuration.AXIS_X)
-        yi = np.linspace(0, Configuration.AXIS_Y - 1, Configuration.AXIS_Y)
+        xi = np.linspace(0, Configuration.AXS_X - 1, Configuration.AXS_X)
+        yi = np.linspace(0, Configuration.AXS_Y - 1, Configuration.AXS_Y)
         xx, yy = np.meshgrid(xi, yi)
 
         # remove any nan of inf values
@@ -380,32 +498,91 @@ class Preprocessing:
         return align_img[0], header
 
     @staticmethod
-    def bias_subtract(img, header, dark):
+    def bias_subtract(img, header):
         """ This function will subtract a bias frame
         :parameter img - The image to de-bias / de-dark
         :parameter header - The image header file
-        :parameter dark - If Y then the dark frame will be subtracted rather than a bias
 
         :return bias_sub, header - The updated image and header """
 
-        if dark == 'Y':
-            file_name = "dark" + Configuration.FILE_EXTENSION
-        else:
-            file_name = 'bias' + Configuration.FILE_EXTENSION
-
         # read in the bias frame and subtract
-        bias = fits.getdata(Configuration.MASTER_DIRECTORY + file_name)
+        bias = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'bias.fits')
 
         # subtract the bias from the image
         bias_sub = img - bias
 
         # update the header
-        if dark == 'Y':
-            header['dark_sub'] = 'Y'
-        else:
-            header['bias_sub'] = 'Y'
+        header['BIAS_SUBT'] = 'Y'
 
         return bias_sub, header
+
+    @staticmethod
+    def dark_subtract(img, header):
+        """ This function will subtract a dark frame
+        :parameter img - The image to DARK SUBSTRACT
+        :parameter header - The image header file
+
+        :return dark_sub, header - The updated image and header """
+
+        # read in the bias frame and subtract
+        dark = fits.getdata(Configuration.CALIBRATION_DIRECTORY + 'dark.fits')
+
+        # subtract the bias from the image
+        dark_sub = img - dark
+
+        # update the header
+        header['DARK_SUBT'] = 'Y'
+
+        return dark_sub, header
+
+    @staticmethod
+    def clip_image(img, header):
+        """ This function will clip the image and remove any overscan regions. This function is written for TOROS
+        specifically, and you will need to update it for any given CCD.
+
+        :parameter - image - The image to clip
+        :parameter - header - the header of the image
+
+        :return image_clip, header - The clipped image and the new header
+        """
+
+        # make the clipped image
+        image_clip = np.zeros((Configuration.AXS_Y, Configuration.AXS_X))
+
+        # what are the sizes of the over scan?
+        ovs_x_size = 180
+        ovs_y_size = 40
+
+        # what are the sizes of each chip (not including the over scan)?
+        chip_x_size = 1320
+        chip_y_size = 5280
+
+        # what is the full size of the chip (including over scan)
+        full_chip_x = chip_x_size + ovs_x_size
+        full_chip_y = chip_y_size + ovs_y_size
+
+        # move through x and y
+        idx = 0
+        for x in range(0, Configuration.AXS_X_RW, full_chip_x):
+
+            idy = 0
+            for y in range(0, Configuration.AXS_Y_RW, full_chip_y):
+
+                # put the clipped image into the holder image
+                image_clip[idy:idy + chip_y_size, idx:idx + chip_x_size] = img[y:y + chip_y_size, x:x + chip_x_size]
+
+                # increase the size of the yclip
+                idy = idy + chip_y_size
+
+            # increase the size of the xclip
+            idx = idx + chip_x_size
+
+        # update the header
+        header['OVERSCAN'] = 'removed'
+        header['X_CLIP'] = ovs_x_size
+        header['Y_CLIP'] = ovs_y_size
+
+        return image_clip, header
 
     @staticmethod
     def flat_divide(img, header):
@@ -415,27 +592,28 @@ class Preprocessing:
 
         :return flat_div, header - The updated image and header """
         # read in the flat frame
-        flat = fits.getdata(Configuration.MASTER_DIRECTORY + 'flat' + Configuration.FILE_EXTENSION)
+        flat = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits")
 
         # subtract the bias from the image
         flat_div = img / flat
 
         # update the header
-        header['flat_div'] = 'Y'
+        header['FLATTEN'] = 'Y'
 
         return flat_div, header
 
     @staticmethod
-    def mk_nme(file, difference_image='N', sky_subtract='N', bias_subtract='N',
-               flat_divide='N', alignment='N', dark_subtract="N"):
+    def mk_nme(file, difference_image='N', image_clip='N', bias_subtract='N', dark_subtract="N",
+               flat_divide='N', sky_subtract='N', plate_solve='N'):
         """ This function will create the appropriate name for the file based on while steps are taken.
-        :argument file - The string with the file name
-        :argument difference_image - Y/N if image subtraction occured
-        :argument sky_subtract - Y/N if sky subtraction was taken
-        :argument bias_subtract - Y/N if a bias is subtracted
-        :argument flat_divide - Y/N if a flat field is divided
-        :argument alignment - Y/N if the image is aligned
-        :argument dark_subtract - Y/N if the image was dark subtracted
+        :parameter file - The string with the file name
+        :parameter image_clip - Y/N if the image was clipped
+        :parameter bias_subtract - Y/N if a bias is subtracted
+        :parameter flat_divide - Y/N if a flat field is divided
+        :parameter dark_subtract - Y/N if the image was dark subtracted
+        :parameter sky_subtract - Y/N if sky subtraction was taken
+        :parameter difference_image - Y/N if image subtraction occurred
+        :parameter plate_solve - Y/N if the plate solving occurred
 
         :return file_name - A string with the new file name
         """
@@ -447,122 +625,85 @@ class Preprocessing:
 
         # update the file name with a 'd' if at the differencing step
         if difference_image == 'Y':
-            file_name = nme_hld[0] + 'd' + Configuration.FILE_EXTENSION
+            file_name = nme_hld[0] + '.' + nme_hld[1] + 'ad' + Configuration.FILE_EXTENSION
 
         # otherwise...
         if difference_image == 'N':
             # update the name to be appropriate for what was done to the file
             # nothing occurs
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'N') \
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + Configuration.FILE_EXTENSION
+            if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'N') \
+                    and (dark_subtract == 'N') and (image_clip == 'N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + Configuration.FILE_EXTENSION
             # bias only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_b' + Configuration.FILE_EXTENSION
+            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_b' + Configuration.FILE_EXTENSION
             # flat
-            if (bias_subtract == 'N') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_f' + Configuration.FILE_EXTENSION
-            # align
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_a' + Configuration.FILE_EXTENSION
+            if (bias_subtract == 'N') and (flat_divide == 'Y') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_f' + Configuration.FILE_EXTENSION
             # sky subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_s' + Configuration.FILE_EXTENSION
+            if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_s' + Configuration.FILE_EXTENSION
             # dark subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_k' + Configuration.FILE_EXTENSION
-
+            if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'Y') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_k' + Configuration.FILE_EXTENSION
+            # iamge clipping only
+            if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'N') and (image_clip =='Y'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_c' + Configuration.FILE_EXTENSION
+            
+            # bias and clip only
+            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'N') and (image_clip =='Y'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bc' + Configuration.FILE_EXTENSION
             # bias and flat only
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_bf' + Configuration.FILE_EXTENSION
-            # bias and align only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_ba' + Configuration.FILE_EXTENSION
+            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bf' + Configuration.FILE_EXTENSION
             # bias and sky_subtract only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_bs' + Configuration.FILE_EXTENSION
-            # bias and flat and align only
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_bfa' + Configuration.FILE_EXTENSION
+            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bs' + Configuration.FILE_EXTENSION
+            # bias and dark only
+            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bk' + Configuration.FILE_EXTENSION
+                
+            # bias and flat and sky subtract only
+            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'N') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bfs' + Configuration.FILE_EXTENSION
+            # bias and flat and dark
+            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'Y') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkf' + Configuration.FILE_EXTENSION
+            # bias and flat and image clip
+            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'N') and (image_clip =='Y'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bcf' + Configuration.FILE_EXTENSION
 
-            # flat and align only
-            if (bias_subtract == 'N') and (flat_divide == 'Y') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_fa' + Configuration.FILE_EXTENSION
-            # flat and sky_subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_fs' + Configuration.FILE_EXTENSION
-            # flat and align and sky subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'Y') and (alignment == 'Y') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_fsa' + Configuration.FILE_EXTENSION
+            # bias and flat and sky and dark
+            if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'Y') and (image_clip =='N'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkfs' + Configuration.FILE_EXTENSION
+            # bias and flat and sky and clip
+            if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'N') and (image_clip =='Y'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bcfs' + Configuration.FILE_EXTENSION
 
-            # align and sky subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'Y') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_sa' + Configuration.FILE_EXTENSION
+            # bias and flat and dark and sky and clip
+            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'Y') and (image_clip =='Y'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkcfs' + Configuration.FILE_EXTENSION
 
-            # flat and sky subtract and bias only
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N'):
-                file_name = nme_hld[0] + '_bfs' + Configuration.FILE_EXTENSION
-
-            # all steps taken
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'Y') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bkfsa' + Configuration.FILE_EXTENSION
-
-            # dark and bias only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bk' + Configuration.FILE_EXTENSION
-            # dark and flat only
-            if (bias_subtract == 'N') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'N') \
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_kf' + Configuration.FILE_EXTENSION
-            # dark and align only
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_ka' + Configuration.FILE_EXTENSION
-            # dark and sky subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_ks' + Configuration.FILE_EXTENSION
-            # dark and bias and flat only
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bkf' + Configuration.FILE_EXTENSION
-            # dark and bias and align only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bka' + Configuration.FILE_EXTENSION
-            # dark and bias and sky subtract only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bks' + Configuration.FILE_EXTENSION
-            # dark and bias and flat and align only
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'Y') and (sky_subtract == 'N')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bkfa' + Configuration.FILE_EXTENSION
-            # dark and bias and flat and sky subtract only
-            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (alignment == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_bkfs' + Configuration.FILE_EXTENSION
-            # dark and flat and align and sky subtract only
-            if (bias_subtract == 'N') and (flat_divide == 'Y') and (alignment == 'Y') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'Y'):
-                file_name = nme_hld[0] + '_kfas' + Configuration.FILE_EXTENSION
-
+            # bias and flat and dark and sky and clip and plate_solve
+            if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'Y') and (image_clip =='Y') and (plate_solve == 'Y'):
+                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkcfsp' + Configuration.FILE_EXTENSION
+                
         return file_name
 
     @staticmethod

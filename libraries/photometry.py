@@ -6,8 +6,6 @@ from astropy.stats import sigma_clipped_stats
 from photutils import CircularAperture
 from photutils import CircularAnnulus
 from photutils import aperture_photometry
-from scipy.interpolate import UnivariateSpline
-import os
 import numpy as np
 import pandas as pd
 import warnings
@@ -15,7 +13,6 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
 matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 
 class Photometry:
@@ -33,17 +30,16 @@ class Photometry:
         img, header = fits.getdata(img_name, header=True)
 
         # get the various important header information
-        jd = header['JD']
-        exp_time = header['EXPTIME']
-        gain = header['EGAIN']
+        jd = 2460579.154861 + (int(img_name.split('_')[-2])-168) * (300. / (24. * 60. * 60.))
+        exp_time = header['EXP_TIME']
 
         # get the stellar positions from the master frame
         positions = np.transpose((star_list['x'], star_list['y']))
 
-        aperture = CircularAperture(positions, r=Configuration.CIRC_APER_SIZE)
+        aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
         aperture_annulus = CircularAnnulus(positions,
-                                           r_in=Configuration.CIRC_ANNULI_INNER,
-                                           r_out=Configuration.CIRC_ANNULI_OUTER)
+                                           r_in=Configuration.ANNULI_INNER,
+                                           r_out=Configuration.ANNULI_OUTER)
         apers = [aperture, aperture_annulus]
 
         # run the photometry to get the data table
@@ -54,16 +50,13 @@ class Photometry:
         sky = np.median(img)
 
         # subtract the sky background to get the stellar flux and square root of total flux to get the photometric error
-        img_flux = np.array(phot_table['aperture_sum_0'] - (sky * aperture.area)) / exp_time
+        img_flux = np.array(phot_table['aperture_sum_0'] - (sky * aperture.area))
 
         # calculate the expected photometric error
-        star_error = np.sqrt(((img_flux / exp_time) +
-                              star_list['master_flux'].to_numpy()) * Configuration.GAIN)
-
-        sky_error = np.sqrt(aperture.area * np.abs(sky) * Configuration.GAIN)
+        star_error = np.sqrt(np.abs(phot_table['aperture_sum_0']))
 
         # combine sky and signal error in quadrature
-        img_flux_er = np.array(np.sqrt(star_error ** 2 + sky_error ** 2))
+        img_flux_er = np.array(np.sqrt(star_error ** 2))
 
         # combine the fluxes
         flux = img_flux + star_list['master_flux'].to_numpy()
@@ -99,7 +92,7 @@ class Photometry:
         flux_file['sky'] = sky
         flux_file['jd'] = jd
         flux_file['zpt'] = off
-        flux_file['cln'] = mag - off
+        flux_file['cln'] = np.where(np.isnan(mag), -9.999999, mag - off)
 
         flux_file.to_csv(fin_name, header=True, index=False)
         return
@@ -114,7 +107,7 @@ class Photometry:
         """
 
         # get the flux files to read in
-        files = Utils.get_file_list(Configuration.DIFFERENCED_DATE_DIRECTORY + '/', '.flux')
+        files = Utils.get_file_list(Configuration.DIFFERENCED_DIRECTORY + Configuration.DATE + '/' + Configuration.FIELD, '.flux')
         nfiles = len(files)
 
         num_rrows = len(star_list)
@@ -128,7 +121,7 @@ class Photometry:
         for idy, file in enumerate(files):
 
             # read in the data frame with the flux information
-            img_flux = pd.read_csv(Configuration.DIFFERENCED_DATE_DIRECTORY + '/' + file, header=0)
+            img_flux = pd.read_csv(Configuration.DIFFERENCED_DIRECTORY + Configuration.DATE + '/' + Configuration.FIELD + '/' + file, header=0)
 
             # set the data to the numpy array
             jd[idy] = img_flux.loc[0, 'jd']
@@ -150,7 +143,7 @@ class Photometry:
         """
 
         # initialize the light curve data frame
-        lc = pd.DataFrame(columns={'jd', 'cln', 'er', 'mag', 'cln'})
+        lc = pd.DataFrame(columns=['jd', 'mag', 'er', 'cln', 'zpt'])
 
         Utils.log("Starting light curve writing...", "info")
 
@@ -172,7 +165,7 @@ class Photometry:
             lc['zpt'] = np.around(zpt[idx, :], decimals=6)
 
             # write the new file
-            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
+            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY + Configuration.DATE + "/" + Configuration.FIELD + "/" +
                                                          star_id + ".lc", sep=" ", index=False, na_rep='9.999999')
 
         return

@@ -9,8 +9,7 @@ import time
 import os
 import logging
 from ligo.skymap.io import read_sky_map
-import healpy as hp
-from astropy.io import fits
+
 logging.getLogger("healpy").setLevel(logging.WARNING)
 logging.getLogger("gcn").setLevel(logging.WARNING)
 

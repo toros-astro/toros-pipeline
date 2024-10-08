@@ -2,7 +2,6 @@
 from libraries.utils import Utils
 from libraries.preprocessing import Preprocessing
 from config import Configuration
-import os
 from astropy.io import fits
 import time
 import numpy as np

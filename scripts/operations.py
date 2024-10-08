@@ -12,8 +12,6 @@ from libraries.priority import Priority
 import time
 import astropy.units as u
 from astropy.time import Time
-import subprocess
-
 
 # connect to PWI4
 Utils.log("Connecting to PWI4...", "info")

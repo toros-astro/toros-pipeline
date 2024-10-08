@@ -3,7 +3,8 @@
 from config import Configuration
 import logging
 import os
-from datetime import datetime, time
+from datetime import datetime
+
 
 class Utils:
 

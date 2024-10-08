@@ -4,81 +4,71 @@
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'tolar'
-    RAW_FILE_EXTENSION = '.fits.fz'
+    MACHINE = 'tess'
+    RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
     # update for different data products
-    STAR = 'NGC2243'
-    RA = 97.3950000
-    DEC = -31.2819444
-    DATES = ['20220107', '20220108', 'injection']
-    REF_DATE = DATES[0]
-    DATE = DATES[2]
+    FIELD = 'FIELD_2b.022'  # FIELD_30.000
+    RA = 52.759 # 0.723
+    DEC = -35.611 # -29.286
+    DATE = '2024-09-24'
     PHOTOMETRY = 'PSF'
     APERTURE_SHAPE = 'circ'
 
     # steps to skip
-    CLEAN_SKIP = 'N'
+    CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
     CALIBRATE_SKIP = 'N'
     MASTER_SKIP = 'N'
-    DIFFERENCE_SKIP = 'N'
+    DIFFERENCE_SKIP = 'Y'
     PHOTOMETRY_SKIP = 'N'
     LIGHTCURVE_SKIP = 'N'
-    COLOR_SKIP = 'N'
+    COLOR_SKIP = 'Y'
+
+    # telescope information
+    PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
+    NUM_PIXELS = 10560  # pixels per side
+    TOROS_DEC_LIMIT = 26.66  # declination limit of the telescope in degrees
+    FOV = (PIXEL_SIZE * NUM_PIXELS) / 3600.
+    SEARCH_DIST = FOV
+    EXP_TIME = 300
+    GAIN = 0.380  # in e-/ADU
 
     # get image information
-    AXS_X = 3352  # 1676
-    AXS_Y = 2532  # 1266
-    AXS = 2048
-    GAIN = 0.380  # in e-/ADU
-    FOV = 5  # size of the image in arc minutes
-    SEARCH_DIST = FOV / 60.0
-    EXP_TIME = 60.
+    AXS_X_RW = 12000
+    AXS_Y_RW = 10600
+    AXS_X = 10560
+    AXS_Y = 10560
+    AXS = 10560
 
     # update the differencing information, primarily the number of stars to use, and the kernel size
     KRNL = 2  # kernel size 2 * KNRL + 1
-    STMP = 11  # stamp size ot use 2 * STMP + 1
+    STMP = 15  # stamp size ot use 2 * STMP + 1
     ORDR = 0  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
     NRSTARS = 1000  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
     KERNEL_LIMIT = 0.5  # the maximum allowable offset in zeropoint in magnitudes
-    AXS_LIMIT = 50  # the number of pixel close to the edge of the frame to use
+    AXS_LIMIT = 100  # the number of pixel close to the edge of the frame to use
     RMS_LOW_LIMIT = 0.005  # the lower limit on precision to use for the kernel stars
     RMS_UP_LIMIT = 0.02  # the upper limit on precision to use for the kernel stars
 
     # update sky subtraction specific information
-    PIX_BOX = 128
-    PIX = 64
-
-    # update the image axes to work for a PIX_BOX setting
-    X_CUT = int(AXS_X % PIX_BOX)  # work to make it divisible by a PIX x PIX box
-    Y_CUT = int(AXS_Y % PIX_BOX)
-    X_CENT = int(AXS_X / 2)  # get the center with respect to the old image
-    Y_CENT = int(AXS_Y / 2)
-    AXIS_X = int(AXS_X - X_CUT)  # get the size of the new image
-    AXIS_Y = int(AXS_Y - Y_CUT)
-
-    # if the image is divisible by the box, then don't worry
-    if (Y_CUT != 0) | (X_CUT != 0):
-        CUT_IMAGE = 'Y'
-    else:
-        CUT_IMAGE = 'N'
+    PIX = 220
 
     # a photometry configuration
     FWHM = 15.  # fwhm of the image
     THRESHOLD = 5.  # the threshold for a source above the background
 
     # aperture information
-    CIRC_APER_SIZE = 10  # circular aperture
+    APER_SIZE = 16  # circular aperture
 
     # aperture annulus for the sky background automatically determined from the main aperture
-    CIRC_ANNULI_INNER = CIRC_APER_SIZE + 2
-    CIRC_ANNULI_OUTER = CIRC_APER_SIZE + 4
+    ANNULI_INNER = APER_SIZE + 2
+    ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/Users/ryanj/Development/toros/"
+    WORKING_DIRECTORY = "/home/oelkerrj/Development/toros/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -86,24 +76,24 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = WORKING_DIRECTORY + "data/"
-    DARKS_DIRECTORY = DATA_DIRECTORY + "darks/"
-    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/"
-    FLATS_DIRECTORY = DATA_DIRECTORY + "flats/"
+    DATA_DIRECTORY = "/media/oelkerrj/DATA/toros/commissioning/"
+    DARKS_DIRECTORY = DATA_DIRECTORY + "darks/" + DATE + "/"
+    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/" + DATE + "/"
+    FLATS_DIRECTORY = DATA_DIRECTORY + "flats/" + DATE + "/"
     RAW_DIRECTORY = DATA_DIRECTORY + "raw/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
+    CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
     CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
-    LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/" + DATE + "/"
+    LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
-    DIFFERENCED_DATE_DIRECTORY = DATA_DIRECTORY + "diff/" + DATE + "/"
     CLEAN_DATE_DIRECTORY = CLEAN_DIRECTORY + DATE + "/"
 
     # directory_list
-    DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY,
+    DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
                    QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, LIGHTCURVE_DIRECTORY,
                    CENTROID_DIRECTORY, RAW_DIRECTORY, FLATS_DIRECTORY, BIAS_DIRECTORY, DARKS_DIRECTORY,
-                   DIFFERENCED_DIRECTORY, DIFFERENCED_DATE_DIRECTORY, CLEAN_DATE_DIRECTORY]
+                   DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS
     LISTEN_NED_WAIT = 1
@@ -136,14 +126,8 @@ class Configuration:
     # total throughput needs to be multiplied by atmospheric quantum efficiency
     TOTAL_THROUGHPUT = CCD_QE * FILTER_QE * TELESCOPE_SEC_QE * TELECSCOPE_PRI_QE * VIGNETTING
 
-    # telescope information
-    PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
-    NUM_PIXELS = 10560  # pixels per side
-    TOROS_DEC_LIMIT = 26.66  # declination limit of the telescope in degrees
-
     # force toros field generation?
     FIELD_GENERATION = 'N'
-    FOV = (PIXEL_SIZE * NUM_PIXELS) / 3600.
 
     # The Felix Aguilar Observatory is more Southern than Tolar
     TOROS_LONGITUDE = -69.3265  # -67.32833333

@@ -10,17 +10,18 @@ Utils.create_directories(Configuration.DIRECTORIES)
 
 # do the necessary preprocessing of the images
 if Configuration.CLEAN_SKIP == 'N':
-    Clean.clean_images(sky_subtract='Y', alignment='Y')
+    Clean.clean_images(image_clip='Y', bias_subtract='Y', dark_subtract='Y',
+                       flat_divide='Y', sky_subtract='Y', plate_solve='Y')
 else:
     Utils.log("Skipping image cleaning.", "info")
 
 if Configuration.MASTER_SKIP == 'N':
-    master, star_list, kernel_stars = Master.pull_master()
+    master, star_list = Master.pull_master()
 else:
     Utils.log("Skipping master frame generation.", "info")
 
 if Configuration.DIFFERENCE_SKIP == 'N':
-    BigDiff.difference_images(star_list, kernel_stars)
+    BigDiff.difference_images(star_list)
 else:
     Utils.log("Skipping image differencing.", "info")
 

@@ -123,7 +123,6 @@ import pandas as pd
 import numpy as np
 from astropy.stats import sigma_clipped_stats
 import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
 
 # do necessary prep work such as making output directories
 files = Utils.get_file_list(Configuration.LIGHTCURVE_DIRECTORY, '.lc')

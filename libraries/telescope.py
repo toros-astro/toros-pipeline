@@ -1,7 +1,6 @@
 """ This set of library functions will control the telescope primarily. These include connecting/disconnecting to the
 mount, slewing the mount to objects, and finding the home position. """
 from libraries.utils import Utils
-from config import Configuration
 from libraries.pwi4_client import PWI4
 import time
 

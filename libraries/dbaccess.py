@@ -5,7 +5,6 @@ import psycopg2
 import pandas as pd
 import os
 from sqlalchemy import create_engine
-from os import environ
 
 
 class DBaccess:

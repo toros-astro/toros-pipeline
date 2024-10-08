@@ -3,17 +3,11 @@ from config import Configuration
 from libraries.utils import Utils
 from libraries.photometry import Photometry
 import os
-import pandas as pd
-import numpy as np
 import warnings
-from PyAstronomy import pyasl
-from astropy import time
-from dateutil import parser
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
 matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 
 class Lightcurves:
@@ -28,25 +22,25 @@ class Lightcurves:
         """
 
         # get the image list to difference
-        files = Utils.get_file_list(Configuration.DIFFERENCED_DATE_DIRECTORY + '/',
+        files = Utils.get_file_list(Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/",
                                     Configuration.FILE_EXTENSION)
 
         # begin the algorithm to produce the photometry
         for idx, file in enumerate(files):
 
-            fin_nme = file.split('.')[0] + '.flux'
+            fin_nme = file.split('.fits')[0] + '.flux'
 
-            if os.path.isfile(Configuration.DIFFERENCED_DATE_DIRECTORY + '/' + fin_nme) == 1:
+            if os.path.isfile(Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + fin_nme) == 1:
                 Utils.log("Flux file " + fin_nme + " found. Skipping...", "info")
 
             # check to see if the differenced file already exists
-            if os.path.isfile(Configuration.DIFFERENCED_DATE_DIRECTORY + '/' + fin_nme) == 0:
+            if os.path.isfile(Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + fin_nme) == 0:
                 Utils.log("Working to extract flux from " + file + ".", "info")
                 Photometry.single_frame_aperture_photometry(star_list,
-                                                            Configuration.DIFFERENCED_DATE_DIRECTORY + '/' + file,
-                                                            Configuration.DIFFERENCED_DATE_DIRECTORY + '/' + fin_nme)
+                                                            Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + file,
+                                                            Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + fin_nme)
 
-        Utils.log("Differencing complete for " + Configuration.STAR + ".", "info")
+        Utils.log("Differencing complete for " + Configuration.FIELD + ".", "info")
 
     @staticmethod
     def mk_raw_lightcurves(star_list):

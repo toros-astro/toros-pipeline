@@ -1,3 +1,4 @@
+from config import Configuration
 from libraries.priority import Priority
 from libraries.dbaccess import DBaccess
 from astroquery.mast import Catalogs
@@ -18,7 +19,7 @@ for idx, row in toros_fields.iterrows():
 
         # run the query
         Utils.log('Querying MAST for all stars within the toros field: ' + str(row.toros_field_id), 'info')
-        catalog_data = Catalogs.query_region(field, radius=1.2, catalog="Gaia")
+        catalog_data = Catalogs.query_region(field, radius=Configuration.SEARCH_DIST/1.5, catalog="Gaia")
         Utils.log('Query finished. ' + str(len(catalog_data)) + ' stars found.', 'info')
 
         # add the toros field to the catalog data
