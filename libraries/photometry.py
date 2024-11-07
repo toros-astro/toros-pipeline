@@ -6,9 +6,12 @@ from astropy.stats import sigma_clipped_stats
 from photutils import CircularAperture
 from photutils import CircularAnnulus
 from photutils import aperture_photometry
+from photutils.centroids import centroid_sources
 import numpy as np
 import pandas as pd
 import warnings
+from astropy.wcs import WCS
+from astropy.time import Time
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
@@ -30,7 +33,9 @@ class Photometry:
         img, header = fits.getdata(img_name, header=True)
 
         # get the various important header information
-        jd = 2460579.154861 + (int(img_name.split('_')[-2])-168) * (300. / (24. * 60. * 60.))
+        # jd = 2460579.154861 + (int(img_name.split('_')[-2])-168) * (300. / (24. * 60. * 60.))
+        time = Time(header['DATE'], format='isot', scale='utc')
+        jd = time.jd
         exp_time = header['EXP_TIME']
 
         # get the stellar positions from the master frame
@@ -59,8 +64,8 @@ class Photometry:
         img_flux_er = np.array(np.sqrt(star_error ** 2))
 
         # combine the fluxes
-        flux = img_flux + star_list['master_flux'].to_numpy()
-        flux_er = np.sqrt(img_flux_er ** 2 + star_list['master_flux_er'] ** 2)
+        flux = img_flux.astype(float) + star_list['master_flux'].to_numpy().astype(float)
+        flux_er = np.sqrt(img_flux_er.astype(float) ** 2 + star_list['master_flux_er'].to_numpy().astype(float) ** 2)
 
         # convert to magnitude
         mag = 25. - 2.5 * np.log10(flux)
@@ -76,7 +81,7 @@ class Photometry:
         for mag_idx, m_lw in enumerate(np.arange(np.floor(mag[~np.isnan(mag)].min()),
                                                  np.floor(mag[~np.isnan(mag)].max()))):
             dmag_bin = dmag[np.argwhere((mag[~np.isnan(mag)] > m_lw) & (mag[~np.isnan(mag)] < m_lw + 1))]
-            dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(dmag_bin, sigma=2.5)
+            dmag_mn, dmag_md, dmag_sg = sigma_clipped_stats(np.array(dmag_bin, dtype=float), sigma=2.5)
             n_mags[mag_idx] = dmag_md
 
         # replace nans with -9.999999
@@ -107,7 +112,9 @@ class Photometry:
         """
 
         # get the flux files to read in
-        files = Utils.get_file_list(Configuration.DIFFERENCED_DIRECTORY + Configuration.DATE + '/' + Configuration.FIELD, '.flux')
+        files, dates = Utils.get_all_files_per_field(Configuration.DIFFERENCED_DIRECTORY,
+                                                     Configuration.FIELD,
+                                                     '.flux')
         nfiles = len(files)
 
         num_rrows = len(star_list)
@@ -121,7 +128,7 @@ class Photometry:
         for idy, file in enumerate(files):
 
             # read in the data frame with the flux information
-            img_flux = pd.read_csv(Configuration.DIFFERENCED_DIRECTORY + Configuration.DATE + '/' + Configuration.FIELD + '/' + file, header=0)
+            img_flux = pd.read_csv(file, header=0)
 
             # set the data to the numpy array
             jd[idy] = img_flux.loc[0, 'jd']
@@ -165,7 +172,8 @@ class Photometry:
             lc['zpt'] = np.around(zpt[idx, :], decimals=6)
 
             # write the new file
-            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY + Configuration.DATE + "/" + Configuration.FIELD + "/" +
+            lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +
+                                                         Configuration.FIELD + "/" +
                                                          star_id + ".lc", sep=" ", index=False, na_rep='9.999999')
 
         return

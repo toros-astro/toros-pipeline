@@ -80,6 +80,11 @@ class Master:
                                                                     star_list.x.to_numpy(),
                                                                     star_list.y.to_numpy(),
                                                                     box_size=5)
+            bd_idxs = np.where(np.isnan(star_list.xcen) | np.isnan(star_list.ycen))
+            if len(bd_idxs[0]) > 0:
+                for bd_idx in bd_idxs[0]:
+                    star_list.loc[bd_idx, 'xcen'] = star_list.loc[bd_idx, 'x']
+                    star_list.loc[bd_idx, 'ycen'] = star_list.loc[bd_idx, 'y']
 
             # centroid the positions
             positions = star_list[['xcen', 'ycen']].copy().reset_index(drop=True)  # positions = (x, y)
@@ -135,9 +140,9 @@ class Master:
         if os.path.isfile(Configuration.MASTER_DIRECTORY + file_name) == 0:
 
             # get the image list
-            image_list = Utils.get_file_list(Configuration.CLEAN_DIRECTORY + Configuration.DATE,
-                                             Configuration.FILE_EXTENSION)
-
+            image_list, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
+                                                              Configuration.FIELD,
+                                                              Configuration.FILE_EXTENSION)
             # determine the number of loops we need to move through for each image
             nfiles = len(image_list)
 
@@ -148,10 +153,9 @@ class Master:
 
                 for kk in range(0, nfiles):
                     # read in the images for the master frame
-                    img_tmp = fits.getdata(Configuration.CLEAN_DIRECTORY +
-                                           Configuration.REF_DATE + '/' + image_list[kk])
+                    img_tmp = fits.getdata(image_list[kk])
 
-                    # initialize if its the first file, otherwise....
+                    # initialize if it's the first file, otherwise....
                     if kk == 0:
                         master = img_tmp
                     else:
@@ -161,8 +165,7 @@ class Master:
                 master = master / nfiles
 
                 # pull the header information from the first file
-                master_header = fits.getheader(Configuration.CLEAN_DIRECTORY +
-                                               Configuration.REF_DATE + '/' + image_list[0])
+                master_header = fits.getheader(image_list[0])
 
                 master_header['COMB'] = 'mean'
                 master_header['NUM_COMB'] = nfiles
@@ -174,7 +177,7 @@ class Master:
             elif combine_type == 'median':
 
                 # determine the number of loops we need to move through for each image
-                nbulk = 6
+                nbulk = 20
 
                 # get the integer and remainder for the combination
                 full_bulk = nfiles // nbulk
@@ -219,8 +222,7 @@ class Master:
                     for jj in range(loop_start, mx_index + loop_start):
                         # read in the image directly into the block_hold
 
-                        master_tmp, master_head = fits.getdata(
-                            Configuration.CLEAN_DIRECTORY + Configuration.DATE + '/' + image_list[jj], header=True)
+                        master_tmp, master_head = fits.getdata(image_list[jj], header=True)
 
                         if (kk == 0) & (jj == 0):
                             block_hold[idx_cnt] = master_tmp

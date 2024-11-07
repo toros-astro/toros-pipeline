@@ -39,8 +39,8 @@ class Preprocessing:
 
             if combine_type == 'mean':
                 # get the image list
-                image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
-
+                image_list = Utils.get_all_files_per_date(Configuration.BIAS_DIRECTORY,
+                                                          Configuration.FILE_EXTENSION)
                 # determine the number of loops we need to move through for each image
                 nfiles = len(image_list)
 
@@ -50,7 +50,7 @@ class Preprocessing:
 
                 for kk in range(0, nfiles):
                     # read in the bias frame
-                    bias_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + image_list[kk])
+                    bias_tmp = fits.getdata(image_list[kk]).astype('float')
 
                     # initialize if it is the first file, otherwise....
                     if kk == 0:
@@ -62,7 +62,7 @@ class Preprocessing:
                 bias_image = bias_image / nfiles
 
                 # pull the header information from the first file of the set
-                bias_header = fits.getheader(Configuration.BIAS_DIRECTORY + image_list[0])
+                bias_header = fits.getheader(image_list[0])
 
                 bias_header['BIAS_COMB'] = 'mean'
                 bias_header['NUM_BIAS'] = nfiles
@@ -94,7 +94,7 @@ class Preprocessing:
 
             if combine_type == 'mean':
                 # get the image list
-                image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
+                image_list = Utils.get_all_files_per_date(Configuration.DARKS_DIRECTORY, Configuration.FILE_EXTENSION)
 
                 # determine the number of loops we need to move through for each image
                 nfiles = len(image_list)
@@ -108,20 +108,28 @@ class Preprocessing:
 
                 for kk in range(0, nfiles):
                     # read in the dark frame
-                    dark_tmp = fits.getdata(Configuration.DARKS_DIRECTORY + image_list[kk])
+                    dark_tmp = fits.getdata(image_list[kk]).astype('float')
+                    dark_header = fits.getheader(image_list[kk])
+
+                    # for scaling purposes, we will pull the exp and scale to 300s
+                    try:
+                        exp_time = dark_header['EXP_TIME']
+                    except:
+                        exp_time = 300.
 
                     # initialize if it is the first file, otherwise....
                     if kk == 0:
                         dark_image = dark_tmp - bias
                     else:
-                        dark_image = (dark_image - bias) + dark_tmp
+                        dark_image = ((dark_image - bias) * (exp_time / 300.)) + dark_tmp
 
                 # generate the mean dark file
                 dark_image = dark_image / nfiles
 
                 # pull the header information from the first file of the set
-                dark_header = fits.getheader(Configuration.DARKS_DIRECTORY + image_list[0])
+                dark_header = fits.getheader(image_list[0])
 
+                dark_header['EXP_TIME'] = 300
                 dark_header['DARK_COMB'] = 'mean'
                 dark_header['NUM_DARK'] = nfiles
                 dark_header['BIAS_SUBT'] = 'Y'
@@ -145,19 +153,19 @@ class Preprocessing:
         :return - The flat field for the given date is returned and written to the calibration directory
         """
 
-        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits") == 0:
+        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "flat.fits") == 0:
 
             # read in the bias file
             bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, bias_overwrite='N', combine_type='mean')
-
+            dark = Preprocessing.mk_dark(Configuration.DARKS_DIRECTORY, overwrite_dark='N', combine_type='mean')
             # get the image list
-            image_list = Utils.get_file_list(image_directory, Configuration.FILE_EXTENSION)
+            image_list = Utils.get_all_files_per_date(Configuration.FLATS_DIRECTORY, Configuration.FILE_EXTENSION)
 
             if combine_type == 'median':
 
                 # determine the number of loops we need to move through for each image
                 nfiles = len(image_list)
-                nbulk = 6
+                nbulk = 20
 
                 # get the integer and remainder for the combination
                 full_bulk = nfiles // nbulk
@@ -202,10 +210,16 @@ class Preprocessing:
                     for jj in range(loop_start, mx_index + loop_start):
 
                         # read in the flat file
-                        flat_tmp, flat_head = fits.getdata(image_directory  + image_list[jj], header=True)
+                        flat_tmp, flat_head = fits.getdata(image_list[jj], header=True)
+                        try:
+                            flat_exp = flat_head['EXP_TIME']
+                        except:
+                            flat_exp = 20.
 
+                        # get the scale factor for the dark frame
+                        dark_scale = 300. / flat_exp
                         # remove the bias frame from the temporary flat field
-                        flat_tmp_bias = flat_tmp - bias
+                        flat_tmp_bias = ((flat_tmp - bias) - (dark / dark_scale)) / flat_exp
 
                         # clip the flat field
                         flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
@@ -221,7 +235,7 @@ class Preprocessing:
 
                 # median the mini-images into one large image
                 flat_image = np.median(hold_data, axis=0)
-                nflat_image = flat_image / np.median(flat_image[5280:5280 + 5280, 2640:2640 + 1320])
+                nflat_image = flat_image / np.median(flat_image[5280:5280 + 5280, 3960:3960 + 1320])
 
                 # what are the sizes of each chip (not including the over scan)?
                 # chip_x_size = 1320
@@ -236,7 +250,7 @@ class Preprocessing:
                 #                 np.median(flat_image[y:y + chip_y_size, x:x + chip_x_size]))
 
                 # pull the header information from the first file of the set
-                flat_header = fits.getheader(image_directory + image_list[0])
+                flat_header = fits.getheader(image_list[0])
                 flat_header['comb_typ'] = 'median'
                 flat_header['norm_pix'] = 'median'
                 flat_header['num_comb'] = len(image_list)
@@ -250,7 +264,7 @@ class Preprocessing:
                 flat_header['min'] = np.min(flat_image)
 
                 # write the image out to the master directory
-                fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits",
+                fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat.fits",
                              nflat_image, flat_header, overwrite=True)
             else:
                 # here is the 'holder'
@@ -263,9 +277,15 @@ class Preprocessing:
 
                     # read in the flat file
                     flat_tmp, flat_head = fits.getdata(image_directory + image, header=True)
+                    try:
+                        flat_exp = flat_head['EXP_TIME']
+                    except:
+                        flat_exp = 20.
 
+                    # get the scale factor for the dark frame
+                    dark_scale = 300. / flat_exp
                     # remove the bias frame from the temporary flat field
-                    flat_tmp_bias = flat_tmp - bias
+                    flat_tmp_bias = ((flat_tmp - bias) - (dark / dark_scale)) / flat_exp
 
                     # clip the flat field
                     flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
@@ -295,7 +315,7 @@ class Preprocessing:
                 fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits",
                              nflat_image, flat_header, overwrite=True)
         else:
-            nflat_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits")
+            nflat_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat.fits")
 
         return nflat_image
 
@@ -324,17 +344,23 @@ class Preprocessing:
         xy = twirl.find_peaks(img)
 
         # now compute the new wcs
-        wcs = twirl.compute_wcs(xy[0:20], all_stars[0:20], tolerance=10)
+        try:
+            wcs = twirl.compute_wcs(xy[0:30], all_stars[0:30], tolerance=10)
+        except ValueError:
+            wcs = twirl.compute_wcs(xy[0:50], all_stars[0:50], tolerance=10)
 
         # add the WCS to the header
         h = wcs.to_header()
 
         for idx, v in enumerate(h):
-            header[v] = (h[idx], h.comments[idx])
+             header[v] = (h[idx], h.comments[idx])
 
         # add additional information such as exposure time and time of exposure
-        header['EXP_TIME'] = Configuration.EXP_TIME
-        header['DATE-OBS'] = Time.now().iso
+        try:
+            header['DATE-OBS']
+        except:
+            header['EXP_TIME'] = Configuration.EXP_TIME
+            header['DATE-OBS'] = Time.now().iso
 
         return img, header
 
@@ -592,7 +618,7 @@ class Preprocessing:
 
         :return flat_div, header - The updated image and header """
         # read in the flat frame
-        flat = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits")
+        flat = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat.fits")
 
         # subtract the bias from the image
         flat_div = img / flat
@@ -617,92 +643,96 @@ class Preprocessing:
 
         :return file_name - A string with the new file name
         """
-        # make a new name for the file based on which actions are taken
-        nme_hld = file.split('.')
 
         # if everything is N then the file name is the original filename
         file_name = file
 
         # update the file name with a 'd' if at the differencing step
         if difference_image == 'Y':
-            file_name = nme_hld[0] + '.' + nme_hld[1] + 'ad' + Configuration.FILE_EXTENSION
+            file = file_name.replace("/clean/", "/diff/")
+            nme_hld = file.split('.fits')
+            file_name = nme_hld[0]  + 'ad' + Configuration.FILE_EXTENSION
 
         # otherwise...
         if difference_image == 'N':
+            # first replace the "raw" directory with the "clean" directory
+            file = file_name.replace("/raw/", "/clean/")
+            nme_hld = file.split('.fits')
+
             # update the name to be appropriate for what was done to the file
             # nothing occurs
             if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'N') \
                     and (dark_subtract == 'N') and (image_clip == 'N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + Configuration.FILE_EXTENSION
             # bias only
             if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_b' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_b' + Configuration.FILE_EXTENSION
             # flat
             if (bias_subtract == 'N') and (flat_divide == 'Y') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_f' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_f' + Configuration.FILE_EXTENSION
             # sky subtract only
             if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_s' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_s' + Configuration.FILE_EXTENSION
             # dark subtract only
             if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'N')\
                     and (dark_subtract == 'Y') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_k' + Configuration.FILE_EXTENSION
-            # iamge clipping only
+                file_name =  nme_hld[0]  + '_k' + Configuration.FILE_EXTENSION
+            # image clipping only
             if (bias_subtract == 'N') and (flat_divide == 'N') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_c' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_c' + Configuration.FILE_EXTENSION
             
             # bias and clip only
             if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bc' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bc' + Configuration.FILE_EXTENSION
             # bias and flat only
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bf' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bf' + Configuration.FILE_EXTENSION
             # bias and sky_subtract only
             if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bs' + Configuration.FILE_EXTENSION
             # bias and dark only
             if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bk' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bk' + Configuration.FILE_EXTENSION
                 
             # bias and flat and sky subtract only
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bfs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bfs' + Configuration.FILE_EXTENSION
             # bias and flat and dark
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
                     and (dark_subtract == 'Y') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkf' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bkf' + Configuration.FILE_EXTENSION
             # bias and flat and image clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'N')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bcf' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bcf' + Configuration.FILE_EXTENSION
 
             # bias and flat and sky and dark
             if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
                     and (dark_subtract == 'Y') and (image_clip =='N'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkfs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bkfs' + Configuration.FILE_EXTENSION
             # bias and flat and sky and clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bcfs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bcfs' + Configuration.FILE_EXTENSION
 
             # bias and flat and dark and sky and clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'Y') and (image_clip =='Y'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkcfs' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bkcfs' + Configuration.FILE_EXTENSION
 
             # bias and flat and dark and sky and clip and plate_solve
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'Y') and (image_clip =='Y') and (plate_solve == 'Y'):
-                file_name =  nme_hld[0] + '.' + nme_hld[1] + '_bkcfsp' + Configuration.FILE_EXTENSION
+                file_name =  nme_hld[0]  + '_bkcfsp' + Configuration.FILE_EXTENSION
                 
         return file_name
 

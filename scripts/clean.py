@@ -28,14 +28,25 @@ class Clean:
         """
         st = time.time()  # clock started
 
-        # get the file list
+        # get the file list for all dates the FIELD was observed
         Utils.log("Getting file list...", "info")
-        files = Utils.get_file_list(Configuration.RAW_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/",
-                                    Configuration.RAW_FILE_EXTENSION)
+        files, date_dirs = Utils.get_all_files_per_field(Configuration.RAW_DIRECTORY,
+                                                         Configuration.FIELD,
+                                                         Configuration.RAW_FILE_EXTENSION)
 
+        # make the output directories (clean and diff)
+        output_dirs = []
+
+        for dte in date_dirs:
+            output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
+
+        Utils.create_directories(output_dirs)
         # break if there are no files
         if len(files) == 0:
-            Utils.log("No .fits files found in " + Configuration.RAW_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" +  ". Breaking...",
+            Utils.log("No .fits files found for " + Configuration.FIELD + "!" +  ". Breaking...",
                       "debug")
             return()
         
@@ -48,29 +59,25 @@ class Clean:
                                              flat_divide, dark_subtract, plate_solve)
 
             # only create the files that don't exist
-            if os.path.isfile(Configuration.CLEAN_DATE_DIRECTORY + '/' + file_name) == 1:
-                Utils.log("Image " + Configuration.CLEAN_DATE_DIRECTORY + file_name +
+            if os.path.isfile(file_name) == 1:
+                Utils.log("Image " + file_name +
                           " already exists. Skipping for now...", "info")
 
             # if the image does not exist then clean
-            if os.path.isfile(Configuration.CLEAN_DATE_DIRECTORY + file_name) == 0:
-
-                # get the full file path
-                file_path = Configuration.RAW_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + Configuration.FIELD+ '/' + file
+            if os.path.isfile(file_name) == 0:
 
                 # clean the image
-                clean_img, header, bd_flag = Clean.clean_img(file_path, image_clip,
+                clean_img, header, bd_flag = Clean.clean_img(file, image_clip,
                                                              bias_subtract, dark_subtract, flat_divide,
                                                              sky_subtract, plate_solve)
 
                 # write out the file
                 if bd_flag == 0:
-                    fits.writeto(Configuration.CLEAN_DIRECTORY + Configuration.DATE + '/' + file_name,
+                    fits.writeto(file_name,
                                  clean_img, header, overwrite=True)
 
                     # print an update to the cleaning process
-                    Utils.log("Cleaned image written as " +
-                              Configuration.CLEAN_DIRECTORY + Configuration.DATE + '/' + file_name + ".", "info")
+                    Utils.log("Cleaned image written as " + file_name + ".", "info")
                 else:
                     Utils.log(file_name + " is a bad image. Not written.", "info")
 
@@ -98,10 +105,6 @@ class Clean:
 
         # read in the image
         img, header = fits.getdata(file, header=True)
-        if np.ndim(img) > 2:
-            img = img[0]
-
-        Preprocessing.clip_image(img, header)
 
         # bias subtract if necessary
         if bias_subtract == 'Y':

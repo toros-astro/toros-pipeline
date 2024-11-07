@@ -24,8 +24,9 @@ class BigDiff:
         """
 
         # get the image list to difference
-        files = Utils.get_file_list(Configuration.CLEAN_DIRECTORY + Configuration.DATE + '/',
-                                    Configuration.FILE_EXTENSION)
+        files, dates = Utils.get_all_files_per_field(Configuration.CLEAN_DIRECTORY,
+                                                     Configuration.FIELD,
+                                                     Configuration.FILE_EXTENSION)
         nfiles = len(files)
 
         # read in the master frame information
@@ -40,17 +41,15 @@ class BigDiff:
 
             fin_nme = Preprocessing.mk_nme(files[ii], 'Y', 'N', 'N', 'N', 'N')
 
-            if os.path.isfile(Configuration.DIFFERENCED_DIRECTORY + Configuration.DATE + '/' + fin_nme) == 1:
+            if os.path.isfile(fin_nme) == 1:
                 Utils.log("File " + files[ii] + " found. Skipping...", "info")
 
             # check to see if the differenced file already exists
-            if os.path.isfile(Configuration.DIFFERENCED_DIRECTORY + Configuration.DATE + '/' + fin_nme) == 0:
+            if os.path.isfile(fin_nme) == 0:
                 Utils.log("Working to difference file " + files[ii] + ".", "info")
-                BigDiff.diff_img(star_list,
-                                 Configuration.CLEAN_DIRECTORY + Configuration.DATE + '/' + files[ii],
-                                 fin_nme)
+                BigDiff.diff_img(star_list, files[ii], fin_nme)
 
-        Utils.log("Differencing complete for " + Configuration.STAR + ".", "info")
+        Utils.log("Differencing complete for " + Configuration.FIELD + ".", "info")
 
         return
 
@@ -74,6 +73,25 @@ class BigDiff:
         # write the new image file
         img_sbkg = org_img - img_sky_median
         img_align = hcongrid(img_sbkg, org_header, master_header)
+        org_header['WCSAXES'] = master_header['WCSAXES']
+        org_header['CRPIX1'] = master_header['CRPIX1']
+        org_header['CRPIX2'] = master_header['CRPIX2']
+        org_header['PC1_1'] = master_header['PC1_1']
+        org_header['PC1_2'] = master_header['PC1_2']
+        org_header['PC2_1'] = master_header['PC2_1']
+        org_header['PC2_2'] = master_header['PC2_2']
+        org_header['CDELT1'] = master_header['CDELT1']
+        org_header['CDELT2'] = master_header['CDELT2']
+        org_header['CUNIT1'] = master_header['CUNIT1']
+        org_header['CUNIT2'] = master_header['CUNIT2']
+        org_header['CTYPE1'] = master_header['CTYPE1']
+        org_header['CTYPE2'] = master_header['CTYPE2']
+        org_header['CRVAL1'] = master_header['CRVAL1']
+        org_header['CRVAL2'] = master_header['CRVAL2']
+        org_header['LONPOLE'] = master_header['LONPOLE']
+        org_header['LATPOLE'] = master_header['LATPOLE']
+        org_header['MJDREF'] = master_header['MJDREF']
+        org_header['RADESYS'] = master_header['RADESYS']
         org_header['ALIGNED'] = 'Y'
 
         fits.writeto(Configuration.CODE_DIFFERENCE_DIRECTORY + 'img.fits',
@@ -105,7 +123,7 @@ class BigDiff:
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
 
         # run the c code
-        os.system('./a.out')
+        shh = os.system('./a.out')
 
         # update the header file
         dimg, diff_header = fits.getdata('dimg.fits', header=True)
@@ -115,7 +133,7 @@ class BigDiff:
         fits.writeto('dimg.fits', dimg, header, overwrite=True)
 
         # move the differenced file to the difference directory
-        os.system('mv dimg.fits ' + Configuration.DIFFERENCED_DIRECTORY + "/" + Configuration.DATE + "/" + Configuration.FIELD + "/" + out_name)
+        os.system('mv dimg.fits ' + out_name)
 
         # change back to the working directory
         os.chdir(Configuration.WORKING_DIRECTORY)

@@ -9,17 +9,23 @@ class Configuration:
     FILE_EXTENSION = '.fits'
 
     # update for different data products
-    FIELD = 'FIELD_2b.022'  # FIELD_30.000
-    RA = 52.759 # 0.723
-    DEC = -35.611 # -29.286
-    DATE = '2024-09-24'
+    FIELD = 'FIELD_36.007' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
+    RA = 10.18868 # 46.636  # 307.317 # # 0.723
+    DEC = -21.69714 # -39.405  # -30.551 #  # -29.286
+    DATE = '2024-10-11'
     PHOTOMETRY = 'PSF'
     APERTURE_SHAPE = 'circ'
+
+    # is there a transient you want the light curve for?
+    TRANSIENT_LC = 'Y'
+    TRANSIENT_NAME = 'AT2024xsq' # 'AT2024xhm'  # 'AT2024ykx' #
+    TRANSIENT_RA = 10.1958012 # 46.9968525  # 307.422951333 #
+    TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
     CLEAN_SKIP = 'Y'
     WRITE_SKY = 'N'
-    CALIBRATE_SKIP = 'N'
+    CALIBRATE_SKIP = 'Y'
     MASTER_SKIP = 'N'
     DIFFERENCE_SKIP = 'Y'
     PHOTOMETRY_SKIP = 'N'
@@ -77,9 +83,9 @@ class Configuration:
 
     # input paths for data etc
     DATA_DIRECTORY = "/media/oelkerrj/DATA/toros/commissioning/"
-    DARKS_DIRECTORY = DATA_DIRECTORY + "darks/" + DATE + "/"
-    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/" + DATE + "/"
-    FLATS_DIRECTORY = DATA_DIRECTORY + "flats/" + DATE + "/"
+    DARKS_DIRECTORY = DATA_DIRECTORY + "darks/"
+    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/"
+    FLATS_DIRECTORY = DATA_DIRECTORY + "flats/"
     RAW_DIRECTORY = DATA_DIRECTORY + "raw/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/"

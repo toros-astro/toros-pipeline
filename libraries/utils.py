@@ -94,6 +94,52 @@ class Utils:
         file.close()
 
     @staticmethod
+    def get_all_files_per_field(path, field, file_ext):
+        """ This function will return all the files for a given TOROS field without their extension.
+        :parameter path - A string with the path of the file.
+        :parameter field - The TOROS field you are interested in searching for
+        :parameter file_ext - The extension of the files, generally something like *.fits.
+
+        :return files_no_ext - A list of files without their extension.
+        """
+        # get the files in the given path directory with the given file extension
+        files_no_ext = []
+        sub_dir = os.listdir(path)
+        dte_dir = []
+        for f in sub_dir:
+            z = path + f + "/" + field + "/"
+            try:
+                for x in os.listdir(z):
+                    if x.endswith(file_ext):
+                        files_no_ext.append(z + x)
+                dte_dir.append(f)
+            except:
+                Utils.log("Field " + field + " not observed on " + f, "info")
+
+        return  files_no_ext, dte_dir
+
+    @staticmethod
+    def get_all_files_per_date(path, file_ext):
+        """ This function will return all the files for a directory split by date. Typically for flats/bias/darks
+        :parameter path - A string with the path of the file.
+        :parameter file_ext - The extension of the files, generally something like *.fits.
+
+        :return files_no_ext - A list of files without their extension.
+        """
+        # get the files in the given path directory with the given file extension
+        files_no_ext = []
+        for f in os.listdir(path):
+            z = path + f + "/"
+            try:
+                for x in os.listdir(z):
+                    if x.endswith(file_ext):
+                        files_no_ext.append(z + x)
+            except:
+                Utils.log("No files found on " + f, "info")
+
+        return  files_no_ext
+
+    @staticmethod
     def get_file_list(path, file_ext):
         """ This function will return the files in a given directory without their extension.
         :parameter path - A string with the path the file.
