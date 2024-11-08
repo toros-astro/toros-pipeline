@@ -256,7 +256,8 @@ class BigDiff:
         dist_cut = 2 * Configuration.STMP + 1
         diff_list['dmag'] = np.abs(diff_list['master_mag'].to_numpy() - mag)
         mn, md, sg = sigma_clipped_stats(diff_list.dmag, sigma=2)
-        mag_cut = md + sg
+        mag_plus = md + sg
+        mag_minus = md - sg
 
         # now clip the stars to begin the subtraction
         diff_list = star_list[(star_list['xcen'] > Configuration.AXS_LIMIT) &
@@ -264,7 +265,7 @@ class BigDiff:
                               (star_list['ycen'] > Configuration.AXS_LIMIT) &
                               (star_list['ycen'] < Configuration.AXS_Y - Configuration.AXS_LIMIT) &
                               (diff_list['min_dist'] > dist_cut) &
-                              (diff_list['dmag'] < mag_cut)].copy().reset_index(drop=True)
+                              ((diff_list['dmag'] < mag_plus) | (diff_list['dmag'] > mag_minus))].copy().reset_index(drop=True)
 
         if len(diff_list) > Configuration.NRSTARS:
             diff_list = diff_list.sample(n=Configuration.NRSTARS)

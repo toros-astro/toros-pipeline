@@ -27,7 +27,7 @@ class Configuration:
     WRITE_SKY = 'N'
     CALIBRATE_SKIP = 'Y'
     MASTER_SKIP = 'N'
-    DIFFERENCE_SKIP = 'Y'
+    DIFFERENCE_SKIP = 'N'
     PHOTOMETRY_SKIP = 'N'
     LIGHTCURVE_SKIP = 'N'
     COLOR_SKIP = 'Y'
@@ -52,7 +52,7 @@ class Configuration:
     KRNL = 2  # kernel size 2 * KNRL + 1
     STMP = 15  # stamp size ot use 2 * STMP + 1
     ORDR = 0  # order of the kernel to use, 0 is stationary, 1 or 2 is spatially varying
-    NRSTARS = 1000  # number of stars used to solve for kernel
+    NRSTARS = 3000  # number of stars used to solve for kernel
     BRIGHT_STARS = 20000  # the top stars to search for in kernel stars
     KERNEL_LIMIT = 0.5  # the maximum allowable offset in zeropoint in magnitudes
     AXS_LIMIT = 100  # the number of pixel close to the edge of the frame to use
