@@ -3,9 +3,9 @@ from config import Configuration
 from libraries.utils import Utils
 from astropy.io import fits
 from astropy.stats import sigma_clipped_stats
-from photutils import CircularAperture
-from photutils import CircularAnnulus
-from photutils import aperture_photometry
+from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAnnulus
+from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import numpy as np
 import pandas as pd
@@ -36,7 +36,7 @@ class Photometry:
         # jd = 2460579.154861 + (int(img_name.split('_')[-2])-168) * (300. / (24. * 60. * 60.))
         time = Time(header['DATE'], format='isot', scale='utc')
         jd = time.jd
-        exp_time = header['EXP_TIME']
+        exp_time = header['EXPTIME']
 
         # get the stellar positions from the master frame
         positions = np.transpose((star_list['x'], star_list['y']))
@@ -170,6 +170,9 @@ class Photometry:
             lc['er'] = np.around(er[idx, :], decimals=6)
             lc['cln'] = np.around(cln[idx, :], decimals=6)
             lc['zpt'] = np.around(zpt[idx, :], decimals=6)
+            
+            # check or create field specific light curve directory
+            Utils.make_field_specific_lightcurve_directory(Configuration.FIELD)
 
             # write the new file
             lc[['jd', 'cln', 'er', 'mag', 'zpt']].to_csv(Configuration.LIGHTCURVE_DIRECTORY +

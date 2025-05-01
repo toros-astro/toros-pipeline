@@ -178,3 +178,17 @@ class Utils:
             if os.path.exists(path) is False:
                 os.mkdir(path)
                 Utils.log(path + ' created.', 'info')
+
+    @staticmethod
+    def make_field_specific_lightcurve_directory(field):
+        """ This function will make a directory inside of lc directory.
+
+        :return - Nothing is returned, but a new directory is made if needed.
+        """
+
+        path_to_field_lc = Configuration.LIGHTCURVE_DIRECTORY + field
+        # check for the directory
+        # if missing create directory
+        if os.path.exists(path_to_field_lc) is False:
+            os.mkdir(path_to_field_lc)
+            Utils.log(path_to_field_lc + ' created.', 'info')

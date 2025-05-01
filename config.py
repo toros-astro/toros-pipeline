@@ -4,28 +4,29 @@
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'tess'
+    MACHINE = 'mcast'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
     # update for different data products
-    FIELD = 'FIELD_36.007' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
-    RA = 10.18868 # 46.636  # 307.317 # # 0.723
-    DEC = -21.69714 # -39.405  # -30.551 #  # -29.286
-    DATE = '2024-10-11'
+    fields = [ 'FIELD_0e.001', 'FIELD_2b.022', 'FIELD_30.000']
+    FIELD = fields[0] #'FIELD_2b.022' #'FIELD_42.074' #'FIELD_2b.022' #'FIELD_36.007' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
+    RA = 6.207 #19.1811417 #52.759 #148.198 #10.18868 # 46.636  # 307.317 # # 0.723
+    DEC = -72.292 #-59.9845556  #-35.611 #-6.519 #-21.69714 # -39.405  # -30.551 #  # -29.286
+    DATE = '2024-09-30'
     PHOTOMETRY = 'PSF'
     APERTURE_SHAPE = 'circ'
 
     # is there a transient you want the light curve for?
-    TRANSIENT_LC = 'Y'
-    TRANSIENT_NAME = 'AT2024xsq' # 'AT2024xhm'  # 'AT2024ykx' #
-    TRANSIENT_RA = 10.1958012 # 46.9968525  # 307.422951333 #
-    TRANSIENT_DEC = -21.9258309  # -38.93038375  # -30.269894 #
+    TRANSIENT_LC = 'N'
+    TRANSIENT_NAME = 'SN2024aaur'#'AT2024xsq' # 'AT2024xhm'  # 'AT2024ykx' #
+    TRANSIENT_RA = 148.614629 #10.1958012 # 46.9968525  # 307.422951333 #
+    TRANSIENT_DEC = -6.952958 #-21.9258309  # -38.93038375  # -30.269894 #
 
     # steps to skip
-    CLEAN_SKIP = 'Y'
-    WRITE_SKY = 'N'
-    CALIBRATE_SKIP = 'Y'
+    CLEAN_SKIP = 'N'
+    WRITE_SKY = 'Y'
+    CALIBRATE_SKIP = 'N'
     MASTER_SKIP = 'N'
     DIFFERENCE_SKIP = 'N'
     PHOTOMETRY_SKIP = 'N'
@@ -74,7 +75,7 @@ class Configuration:
     ANNULI_OUTER = APER_SIZE + 4
 
     # output paths for logging, temporary files, figures etc
-    WORKING_DIRECTORY = "/home/oelkerrj/Development/toros/"
+    WORKING_DIRECTORY = "/Volumes/datadrive/working_directory/"
     ALERTS_DIRECTORY = WORKING_DIRECTORY + 'alerts/'
     ANALYSIS_DIRECTORY = WORKING_DIRECTORY + 'analysis/'
     LOG_DIRECTORY = WORKING_DIRECTORY + 'logs/'
@@ -82,24 +83,26 @@ class Configuration:
     CODE_DIFFERENCE_DIRECTORY = WORKING_DIRECTORY + 'difference/'
 
     # input paths for data etc
-    DATA_DIRECTORY = "/media/oelkerrj/DATA/toros/commissioning/"
+    DATA_DIRECTORY = "/Volumes/datadrive/coldharbor/"
     DARKS_DIRECTORY = DATA_DIRECTORY + "darks/"
     BIAS_DIRECTORY = DATA_DIRECTORY + "bias/"
     FLATS_DIRECTORY = DATA_DIRECTORY + "flats/"
     RAW_DIRECTORY = DATA_DIRECTORY + "raw/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
+    REVIEW_DIRECTORY = DATA_DIRECTORY + "review/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
     CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
     CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
     CLEAN_DATE_DIRECTORY = CLEAN_DIRECTORY + DATE + "/"
+    REVIEW_DATE_DIRECTORY = REVIEW_DIRECTORY + DATE + "/"
 
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
                    QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, LIGHTCURVE_DIRECTORY,
                    CENTROID_DIRECTORY, RAW_DIRECTORY, FLATS_DIRECTORY, BIAS_DIRECTORY, DARKS_DIRECTORY,
-                   DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
+                   DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, REVIEW_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS
     LISTEN_NED_WAIT = 1

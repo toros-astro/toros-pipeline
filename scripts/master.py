@@ -3,8 +3,8 @@ from libraries.utils import Utils
 import numpy as np
 import os
 from astropy.io import fits
-from photutils import CircularAperture
-from photutils import CircularAnnulus
+from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import pandas as pd
@@ -145,7 +145,6 @@ class Master:
                                                               Configuration.FILE_EXTENSION)
             # determine the number of loops we need to move through for each image
             nfiles = len(image_list)
-
             if combine_type == 'mean':
                 # update the log
                 Utils.log("Generating the master frame from multiple files using a mean combination. There are "

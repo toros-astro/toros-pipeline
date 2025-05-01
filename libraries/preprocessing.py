@@ -113,7 +113,9 @@ class Preprocessing:
 
                     # for scaling purposes, we will pull the exp and scale to 300s
                     try:
-                        exp_time = dark_header['EXP_TIME']
+                        exp_time = dark_header['EXPTIME']
+                        if exp_time != 300.:
+                            exp_time = 300.
                     except:
                         exp_time = 300.
 
@@ -129,7 +131,7 @@ class Preprocessing:
                 # pull the header information from the first file of the set
                 dark_header = fits.getheader(image_list[0])
 
-                dark_header['EXP_TIME'] = 300
+                #dark_header['EXPTIME'] = 300
                 dark_header['DARK_COMB'] = 'mean'
                 dark_header['NUM_DARK'] = nfiles
                 dark_header['BIAS_SUBT'] = 'Y'
@@ -178,6 +180,7 @@ class Preprocessing:
 
                 # here is the 'holder'
                 hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_X, Configuration.AXS_Y))
+                hold_data_names = []
 
                 # update the log
                 Utils.log("Generating a master flat field from multiple files in bulks of " + str(nbulk) +
@@ -187,6 +190,8 @@ class Preprocessing:
                 for kk in range(0, hold_bulk):
 
                     # loop through the images in sets of nbulk
+                    block_hold_names = []
+
                     if kk < full_bulk:
                         # generate the image holder
                         block_hold = np.ndarray(shape=(nbulk, Configuration.AXS_X, Configuration.AXS_Y))
@@ -211,10 +216,13 @@ class Preprocessing:
 
                         # read in the flat file
                         flat_tmp, flat_head = fits.getdata(image_list[jj], header=True)
+                        Utils.log(f"Reading: {image_list[jj]}", "info")
                         try:
-                            flat_exp = flat_head['EXP_TIME']
+                            flat_exp = flat_head['EXPTIME']
+                            if flat_exp != 5.:
+                                flat_exp = 5.
                         except:
-                            flat_exp = 20.
+                            flat_exp = 5. ##ORGIGINAL: 20.
 
                         # get the scale factor for the dark frame
                         dark_scale = 300. / flat_exp
@@ -224,17 +232,49 @@ class Preprocessing:
                         # clip the flat field
                         flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
 
-                        # put the image into the block_hold
-                        block_hold[idx_cnt] = flat_tmp_bias_clip
+                        # put the image into the block_hold files
+                        #block_hold[idx_cnt] = flat_tmp_bias_clip
+                        block_hold_name = "flat_block_tmp_" + str(idx_cnt).zfill(3)
+
+                        block_hold_names.append(block_hold_name)
+
+                        fits.writeto(Configuration.CALIBRATION_DIRECTORY + block_hold_name + ".fits",
+                             flat_tmp_bias_clip, flat_head, overwrite=True)
 
                         # increase the iteration
                         idx_cnt += 1
 
-                    # median the data into a single file
-                    hold_data[kk] = np.median(block_hold, axis=0)
+                    Utils.log(f"Median for block hold files: \n {block_hold_names}", "info")
 
+                    # median the data into a single file
+                    for idx, block_hold_name in enumerate(block_hold_names):
+                        block_hold_data = fits.getdata(Configuration.CALIBRATION_DIRECTORY+block_hold_name + ".fits")
+                        block_hold[idx] = block_hold_data
+
+                    #hold_data[kk] = np.median(block_hold, axis=0)
+                    hold_data_name = "flat_hold_data_" + str(kk).zfill(3)
+                    hold_data_names.append(hold_data_name)
+                    hold_data_data = np.median(block_hold, axis=0)
+
+                    # Release block_hold
+                    block_hold = None
+
+                    # write hold_data to file
+                    fits.writeto(Configuration.CALIBRATION_DIRECTORY + hold_data_name + ".fits",
+                                 hold_data_data, overwrite=True)
+
+
+                Utils.log(f"Median combine mini-images from: \n {hold_data_names}", "info")
                 # median the mini-images into one large image
+                for idx, hold_data_name in enumerate(hold_data_names):
+                    hold_data_data = fits.getdata(Configuration.CALIBRATION_DIRECTORY+hold_data_name+".fits")
+                    hold_data[idx] = hold_data_data
+
                 flat_image = np.median(hold_data, axis=0)
+
+                # Release hold_data
+                hold_data = None
+
                 nflat_image = flat_image / np.median(flat_image[5280:5280 + 5280, 3960:3960 + 1320])
 
                 # what are the sizes of each chip (not including the over scan)?
@@ -278,9 +318,11 @@ class Preprocessing:
                     # read in the flat file
                     flat_tmp, flat_head = fits.getdata(image_directory + image, header=True)
                     try:
-                        flat_exp = flat_head['EXP_TIME']
+                        flat_exp = flat_head['EXPTIME']
+                        if flat_exp != 5.:
+                            flat_exp = 5.
                     except:
-                        flat_exp = 20.
+                        flat_exp = 5.
 
                     # get the scale factor for the dark frame
                     dark_scale = 300. / flat_exp
@@ -338,11 +380,11 @@ class Preprocessing:
         all_stars = twirl.gaia_radecs(center, 1.25 * fov)
 
         # keep the isolated stars
-        all_stars = twirl.geometry.sparsify(all_stars, 0.01)
+        all_stars = twirl.geometry.sparsify(all_stars, 0.33) #Original: 0.01 degree = 0.6 arcmin 
 
         # get the stars in the image
         xy = twirl.find_peaks(img)
-
+        print(f"length of xy: {len(xy)}")
         # now compute the new wcs
         try:
             wcs = twirl.compute_wcs(xy[0:30], all_stars[0:30], tolerance=10)
@@ -357,9 +399,10 @@ class Preprocessing:
 
         # add additional information such as exposure time and time of exposure
         try:
-            header['DATE-OBS']
+            header['DATE']
+            header['DATE-OBS'] = header['DATE']
         except:
-            header['EXP_TIME'] = Configuration.EXP_TIME
+            header['EXPTIME'] = Configuration.EXP_TIME
             header['DATE-OBS'] = Time.now().iso
 
         return img, header
@@ -607,6 +650,8 @@ class Preprocessing:
         header['OVERSCAN'] = 'removed'
         header['X_CLIP'] = ovs_x_size
         header['Y_CLIP'] = ovs_y_size
+        header['NAXIS1'] = image_clip.shape[1]
+        header['NAXIS2'] = image_clip.shape[0]
 
         return image_clip, header
 
@@ -698,10 +743,13 @@ class Preprocessing:
                     and (dark_subtract == 'N') and (image_clip =='N'):
                 file_name =  nme_hld[0]  + '_bs' + Configuration.FILE_EXTENSION
             # bias and dark only
-            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'Y')\
-                    and (dark_subtract == 'N') and (image_clip =='N'):
+            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'N')\
+                    and (dark_subtract == 'Y') and (image_clip =='N'):
                 file_name =  nme_hld[0]  + '_bk' + Configuration.FILE_EXTENSION
-                
+            # bias and dark and sky subtract and image clip only
+            if (bias_subtract == 'Y') and (flat_divide == 'N') and (sky_subtract == 'Y')\
+                    and (dark_subtract == 'Y') and (image_clip =='Y'):
+                file_name =  nme_hld[0]  + '_bkcs' + Configuration.FILE_EXTENSION
             # bias and flat and sky subtract only
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='N'):
@@ -723,7 +771,10 @@ class Preprocessing:
             if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'Y')\
                     and (dark_subtract == 'N') and (image_clip =='Y'):
                 file_name =  nme_hld[0]  + '_bcfs' + Configuration.FILE_EXTENSION
-
+            # bias and flat and sky and clip
+            if (bias_subtract == 'Y') and (flat_divide == 'Y')and (sky_subtract == 'N')\
+                    and (dark_subtract == 'Y') and (image_clip =='Y'):
+                file_name =  nme_hld[0]  + '_bkcf' + Configuration.FILE_EXTENSION
             # bias and flat and dark and sky and clip
             if (bias_subtract == 'Y') and (flat_divide == 'Y') and (sky_subtract == 'Y')\
                     and (dark_subtract == 'Y') and (image_clip =='Y'):

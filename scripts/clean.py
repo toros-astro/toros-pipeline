@@ -8,7 +8,8 @@ import os
 from astropy.io import fits
 import time
 import numpy as np
-
+import subprocess
+import shutil
 
 class Clean:
 
@@ -42,6 +43,8 @@ class Clean:
             output_dirs.append(Configuration.DATA_DIRECTORY + "clean/" + dte + "/" + Configuration.FIELD)
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte)
             output_dirs.append(Configuration.DATA_DIRECTORY + "diff/" + dte + "/" + Configuration.FIELD)
+            output_dirs.append(Configuration.DATA_DIRECTORY + "review/" + dte) 
+            output_dirs.append(Configuration.DATA_DIRECTORY + "review/" + dte + "/" + Configuration.FIELD)
 
         Utils.create_directories(output_dirs)
         # break if there are no files
@@ -49,32 +52,42 @@ class Clean:
             Utils.log("No .fits files found for " + Configuration.FIELD + "!" +  ". Breaking...",
                       "debug")
             return()
-        
+
         Utils.log("Starting to clean " + str(len(files)) + " images.", "info")
         for idx, file in enumerate(files):
 
             # make a new name for the file based on which actions are taken
-            file_name = Preprocessing.mk_nme(file, 'N',
-                                             image_clip, sky_subtract, bias_subtract,
-                                             flat_divide, dark_subtract, plate_solve)
+            file_name = Preprocessing.mk_nme(file,
+                                             difference_image='N',
+                                             image_clip = image_clip,
+                                             bias_subtract = bias_subtract,
+                                             dark_subtract = dark_subtract,
+                                             flat_divide  = flat_divide,
+                                             sky_subtract = sky_subtract,
+                                             plate_solve = plate_solve)
 
             # only create the files that don't exist
+            # skip if in review pile
+            review_file_name = file_name.replace("/clean/", "/review/")
             if os.path.isfile(file_name) == 1:
                 Utils.log("Image " + file_name +
                           " already exists. Skipping for now...", "info")
-
+            
+            if os.path.isfile(review_file_name):
+                Utils.log("Image " + file_name +
+                          " is marked for review. Skipping for now...", "info")
             # if the image does not exist then clean
-            if os.path.isfile(file_name) == 0:
+            if os.path.isfile(file_name) == 0 and os.path.isfile(review_file_name) == 0:
 
                 # clean the image
-                clean_img, header, bd_flag = Clean.clean_img(file, image_clip,
+                clean_img, header, bd_flag = Clean.clean_img(file, file_name, image_clip,
                                                              bias_subtract, dark_subtract, flat_divide,
                                                              sky_subtract, plate_solve)
 
                 # write out the file
                 if bd_flag == 0:
-                    fits.writeto(file_name,
-                                 clean_img, header, overwrite=True)
+                    #fits.writeto(file_name,
+                    #             clean_img, header, overwrite=True)
 
                     # print an update to the cleaning process
                     Utils.log("Cleaned image written as " + file_name + ".", "info")
@@ -87,7 +100,7 @@ class Clean:
         Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
 
     @staticmethod
-    def clean_img(file, image_clip='Y', bias_subtract='N',
+    def clean_img(file, clean_file_name, image_clip='Y', bias_subtract='N',
                   dark_subtract="N", flat_divide='N', sky_subtract="N", plate_solve="N"):
         """ This function is the primary script to clean the image, various other functions found in this class
         can be found in the various libraries imported.
@@ -152,7 +165,7 @@ class Clean:
 
             Utils.log("A background box of " + str(Configuration.PIX) + " x " + str(Configuration.PIX) +
                       " will be used for background subtraction.", "info")
-
+            fits.writeto(Configuration.DATA_DIRECTORY+"debug/debug_beforeskysub.fits", img, header, overwrite=True)
             img, header = Preprocessing.sky_subtract(img, header, Configuration.WRITE_SKY)
             fn = time.time()
             Utils.log("Sky subtracted in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
@@ -163,9 +176,36 @@ class Clean:
         if plate_solve == 'Y':
             st = time.time()
             Utils.log("Now plate solving and correcting the header.", "info")
-            img, header = Preprocessing.correct_header(img, header)
+            fits.writeto(Configuration.DATA_DIRECTORY+"debug/debug_platesolve.fits", img, header, overwrite=True)
+            #img, header = Preprocessing.correct_header(img, header)
+            fits.writeto(clean_file_name+".temp" , img, header, overwrite=True)
+
+            # set output directory for astrometry
+            output_dir = os.path.dirname(clean_file_name)
+
+            astrometry_command = "solve-field --scale-units arcsecperpix --scale-low 0.48 --scale-high 0.5 --no-plots --temp-axy --index-xyls none --match none --rdls none --solved none --corr none --dir " + output_dir + " --new-fits " + clean_file_name + " " + clean_file_name + ".temp"
+
+            subprocess.run(astrometry_command, shell=True)
+
+            # Clean up astrometry output, remove .temp and .wcs files
+            astrometry_extensions = [ ".temp", ".wcs"]
+            
+            # First check that astrometry generated plate solved file (.fits)
+            if os.path.exists(clean_file_name):
+                # if file exists then remove extra files
+                for extension in astrometry_extensions:
+                    file_to_remove = clean_file_name + extension
+                    if os.path.exists(file_to_remove):
+                        os.remove(file_to_remove)
+                        Utils.log(f"File {file_to_remove} deleted.", "info")
+            else:
+                # if file does not exist then move the temp file out of clean for review
+                temp_file_name = clean_file_name.replace("/clean/","/review/")
+                shutil.move(clean_file_name+".temp", temp_file_name)
+                Utils.log(f"Plate Solve Failed. Moving file to review directory for human inspection.", "info")
+            
             fn = time.time()
-            Utils.log("The image has been plate sovled in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
+            Utils.log("Plate solve step completed in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
         Utils.log("Cleaning finished.", "info")
 
         bd_flag = 0

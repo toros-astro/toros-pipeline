@@ -3,9 +3,9 @@ from config import Configuration
 from libraries.utils import Utils
 from libraries.photometry import Photometry
 import os
-from photutils import CircularAperture
-from photutils import CircularAnnulus
-from photutils import aperture_photometry
+from photutils.aperture import CircularAperture
+from photutils.aperture import CircularAnnulus
+from photutils.aperture import aperture_photometry
 from photutils.centroids import centroid_sources
 import numpy as np
 import pandas as pd
@@ -17,7 +17,7 @@ warnings.filterwarnings("ignore", category=Warning)
 import matplotlib
 matplotlib.use('TkAgg')
 
-
+## Missing os.mkdir for the field of interest.
 class Lightcurves:
 
     @staticmethod
@@ -89,14 +89,14 @@ class Lightcurves:
 
         # begin the algorithm to produce the photometry
         for idx, file in enumerate(files):
-
+            Utils.log(f"File name: {file}", "info")
             fin_nme = file.split('.fits')[0] + '.flux'
-
-            if os.path.isfile(fin_nme) == 0:
+            Utils.log(f"fin_nme: {file} \n os.path.isfile(): {os.path.isfile(fin_nme)}", "info")
+            if os.path.isfile(fin_nme) == True:
                 Utils.log("Flux file " + fin_nme + " found. Skipping...", "info")
 
             # check to see if the differenced file already exists
-            if os.path.isfile(fin_nme) == 1:
+            if os.path.isfile(fin_nme) == False:
 
                 Utils.log("Working to extract flux from " + file + ".", "info")
                 Photometry.single_frame_aperture_photometry(star_list,
