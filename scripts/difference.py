@@ -273,40 +273,46 @@ class BigDiff:
         Utils.log('Finding stars for kernel from the star list.', 'info')
 
         positions = np.transpose((star_list['xcen'], star_list['ycen']))
+        Utils.log(f'star_list transpose complete. Position shape: {positions.shape}', 'debug')
 
         aperture = CircularAperture(positions, r=Configuration.APER_SIZE)
         aperture_annulus = CircularAnnulus(positions,
                                            r_in=Configuration.ANNULI_INNER,
                                            r_out=Configuration.ANNULI_OUTER)
         apers = [aperture, aperture_annulus]
-
+        Utils.log('apertures and annulus are complete.', 'debug')
         # run the photometry to get the data table
         phot_table = aperture_photometry(img, apers, method='exact')
-
+        Utils.log('aperture_photometry complete.', 'debug')
         # extract the sky background for each annuli based on either a global or local subtraction
         sky = phot_table['aperture_sum_1'] / aperture_annulus.area
-
+        Utils.log('sky extraction complete.', 'debug')
         # subtract the sky background to get the stellar flux and square root of total flux to get the photometric error
         flux = np.array(phot_table['aperture_sum_0'] - (sky * aperture.area)) / Configuration.EXP_TIME
-
+        Utils.log('sky subtraction complete.', 'debug')
         # calculate the expected photometric error
         star_error = np.sqrt((phot_table['aperture_sum_0'] - (sky * aperture.area)) * Configuration.GAIN)
         sky_error = np.sqrt(aperture.area * sky * Configuration.GAIN)
-
+        Utils.log('error calculations complete.', 'debug')
         # combine sky and signal error in quadrature
         flux_er = np.array(np.sqrt(star_error ** 2 + sky_error ** 2))
-
+        Utils.log('flux error calculation complete.', 'debug')
         # convert to magnitude
         mag = 25 - 2.5 * np.log10(flux)
         mag_er = (np.log(10.) / 2.5) * (flux_er / flux)
 
         diff_list = star_list.copy().reset_index(drop=True)
-        diff_list['min_dist'] = diff_list.apply(lambda x: np.sort(np.sqrt((x['x'] - diff_list['x']) ** 2 +
-                                                                          x['y'] - diff_list['y']) ** 2)[1],
-                                                axis=1)
+#        diff_list['min_dist'] = diff_list.apply(lambda x: np.sort(np.sqrt((x['x'] - diff_list['x']) ** 2 +
+#                                                                          (x['y'] - diff_list['y']) ** 2))[1],
+#                                                axis=1)
+        # Faster algorithm for minimum pairwise distance per point
+        diff_list['min_dist'] = diff_list.apply(lambda x: np.sqrt((x['x'] - diff_list['x']) ** 2 + (x['y'] - diff_list['y']) ** 2)[(x['x'] - diff_list['x']) ** 2 + (x['y'] - diff_list['y']) ** 2 > 0].min(), axis=1)
+        Utils.log('diff_list[min_dist] lambda function complete.', 'debug')
         dist_cut = 2 * Configuration.STMP + 1
         diff_list['dmag'] = np.abs(diff_list['master_mag'].to_numpy() - mag)
+        Utils.log('diff_list[dmag] complete.', 'debug')
         mn, md, sg = sigma_clipped_stats(diff_list.dmag, sigma=2)
+        Utils.log('sigma_clip_stats(diff_list.dmag) complete.', 'debug')
         mag_plus = md + sg
         mag_minus = md - sg
 
@@ -317,7 +323,7 @@ class BigDiff:
                               (star_list['ycen'] < Configuration.AXS_Y - Configuration.AXS_LIMIT) &
                               (diff_list['min_dist'] > dist_cut) &
                               ((diff_list['dmag'] < mag_plus) | (diff_list['dmag'] > mag_minus))].copy().reset_index(drop=True)
-
+        Utils.log('diff_list clipping complete.','debug')
         if len(diff_list) > Configuration.NRSTARS:
             diff_list = diff_list.sample(n=Configuration.NRSTARS)
         else:
