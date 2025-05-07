@@ -4,7 +4,7 @@
 class Configuration:
 
     # Computer for reduction
-    MACHINE = 'mcast'
+    MACHINE = 'personal'
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 

@@ -80,7 +80,7 @@ class Clean:
             if os.path.isfile(file_name) == 0 and os.path.isfile(review_file_name) == 0:
 
                 # clean the image
-                clean_img, header, bd_flag = Clean.clean_img(file, file_name, image_clip,
+                clean_img, header, bd_flag = Clean.clean_img(file, image_clip,
                                                              bias_subtract, dark_subtract, flat_divide,
                                                              sky_subtract, plate_solve)
 
@@ -100,7 +100,7 @@ class Clean:
         Utils.log("Imaging cleaning complete in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
 
     @staticmethod
-    def clean_img(file, clean_file_name, image_clip='Y', bias_subtract='N',
+    def clean_img(file, image_clip='Y', bias_subtract='N',
                   dark_subtract="N", flat_divide='N', sky_subtract="N", plate_solve="N"):
         """ This function is the primary script to clean the image, various other functions found in this class
         can be found in the various libraries imported.
@@ -118,6 +118,15 @@ class Clean:
 
         # read in the image
         img, header = fits.getdata(file, header=True)
+
+        # get cleaned file path
+        clean_file_name = Preprocessing.mk_nme(file, difference_image='N',
+                                         image_clip=image_clip,
+                                         sky_subtract=sky_subtract,
+                                         bias_subtract=bias_subtract,
+                                         flat_divide=flat_divide,
+                                         dark_subtract=dark_subtract,
+                                         plate_solve=plate_solve)
 
         # bias subtract if necessary
         if bias_subtract == 'Y':
@@ -177,7 +186,7 @@ class Clean:
             st = time.time()
             Utils.log("Now plate solving and correcting the header.", "info")
             fits.writeto(Configuration.DATA_DIRECTORY+"debug/debug_platesolve.fits", img, header, overwrite=True)
-            #img, header = Preprocessing.correct_header(img, header)
+            img, header = Preprocessing.correct_header(img, header)
             fits.writeto(clean_file_name+".temp" , img, header, overwrite=True)
 
             # set output directory for astrometry

@@ -371,39 +371,43 @@ class Preprocessing:
         return img, header - The corrected image will be sent back
         """
 
-        # get the approximate center of the image
-        center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
-        pixel = Configuration.PIXEL_SIZE * u.arcsec
-        fov = np.max(np.shape(img)) * pixel.to(u.deg)
-
-        # now query the gaia region
-        all_stars = twirl.gaia_radecs(center, 1.25 * fov)
-
-        # keep the isolated stars
-        all_stars = twirl.geometry.sparsify(all_stars, 0.33) #Original: 0.01 degree = 0.6 arcmin 
-
-        # get the stars in the image
-        xy = twirl.find_peaks(img)
-        print(f"length of xy: {len(xy)}")
-        # now compute the new wcs
-        try:
-            wcs = twirl.compute_wcs(xy[0:30], all_stars[0:30], tolerance=10)
-        except ValueError:
-            wcs = twirl.compute_wcs(xy[0:50], all_stars[0:50], tolerance=10)
-
-        # add the WCS to the header
-        h = wcs.to_header()
-
-        for idx, v in enumerate(h):
-             header[v] = (h[idx], h.comments[idx])
+#        # get the approximate center of the image
+#        center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
+#        pixel = Configuration.PIXEL_SIZE * u.arcsec
+#        fov = np.max(np.shape(img)) * pixel.to(u.deg)
+#
+#        # now query the gaia region
+#        all_stars = twirl.gaia_radecs(center, 1.25 * fov)
+#
+#        # keep the isolated stars
+#        all_stars = twirl.geometry.sparsify(all_stars, 0.33) #Original: 0.01 degree = 0.6 arcmin 
+#
+#        # get the stars in the image
+#        xy = twirl.find_peaks(img)
+#        print(f"length of xy: {len(xy)}")
+#        # now compute the new wcs
+#        try:
+#            wcs = twirl.compute_wcs(xy[0:30], all_stars[0:30], tolerance=10)
+#        except ValueError:
+#            wcs = twirl.compute_wcs(xy[0:50], all_stars[0:50], tolerance=10)
+#
+#        # add the WCS to the header
+#        h = wcs.to_header()
+#
+#        for idx, v in enumerate(h):
+#             header[v] = (h[idx], h.comments[idx])
 
         # add additional information such as exposure time and time of exposure
         try:
             header['DATE']
             header['DATE-OBS'] = header['DATE']
         except:
+            header['DATE-OBS'] = Time.now().iso # Look for better solution
+
+        try:
+            header['EXPTIME']
+        except:
             header['EXPTIME'] = Configuration.EXP_TIME
-            header['DATE-OBS'] = Time.now().iso
 
         return img, header
 
