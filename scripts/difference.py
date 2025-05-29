@@ -11,6 +11,7 @@ from photutils.aperture import CircularAnnulus
 from photutils.aperture import aperture_photometry
 from astropy.stats import sigma_clipped_stats
 from FITS_tools.hcongrid import hcongrid
+from scipy.spatial import KDTree
 
 class BigDiff:
 
@@ -306,8 +307,16 @@ class BigDiff:
 #                                                                          (x['y'] - diff_list['y']) ** 2))[1],
 #                                                axis=1)
         # Faster algorithm for minimum pairwise distance per point
-        diff_list['min_dist'] = diff_list.apply(lambda x: np.sqrt((x['x'] - diff_list['x']) ** 2 + (x['y'] - diff_list['y']) ** 2)[(x['x'] - diff_list['x']) ** 2 + (x['y'] - diff_list['y']) ** 2 > 0].min(), axis=1)
-        Utils.log('diff_list[min_dist] lambda function complete.', 'debug')
+        #diff_list['min_dist'] = diff_list.apply(lambda x: np.sqrt((x['x'] - diff_list['x']) ** 2 + (x['y'] - diff_list['y']) ** 2)[(x['x'] - diff_list['x']) ** 2 + (x['y'] - diff_list['y']) ** 2 > 0].min(), axis=1)
+        
+        # Even faster algorithm for minimum pairwise distance
+        points_array = diff_list[['x', 'y']]
+        tree = KDTree(points_array)
+        distances, indices = tree.query(points_array, k=2)
+        min_distances_kdtree = distances[:, 1]
+        diff_list['min_dist'] = min_distances_kdtree
+
+        Utils.log('diff_list[min_dist] function complete.', 'debug')
         dist_cut = 2 * Configuration.STMP + 1
         diff_list['dmag'] = np.abs(diff_list['master_mag'].to_numpy() - mag)
         Utils.log('diff_list[dmag] complete.', 'debug')
