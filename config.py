@@ -8,6 +8,9 @@ class Configuration:
     RAW_FILE_EXTENSION = '.fits'
     FILE_EXTENSION = '.fits'
 
+    # parallel option for using half of available cpus
+    PARALLEL = False
+
     # update for different data products
     fields = [ 'FIELD_0e.001', 'FIELD_2b.022', 'FIELD_30.000']
     FIELD = fields[0] #'FIELD_2b.022' #'FIELD_42.074' #'FIELD_2b.022' #'FIELD_36.007' # 'FIELD_28.01c'  # 'FIELD_2f.0d2'  # # FIELD_30.000
