@@ -184,7 +184,7 @@ class BigDiff:
         # get the kernel stars for the subtraction
         if parallel:
             Utils.log(f"parallel find_subtraction_stars called.\n file: {file}\nparallel: {parallel}  ", "debug")
-            kernel_stars = BigDiff.find_subtraction_stars_img(org_img, starlist, file, parallel)
+            kernel_stars = BigDiff.find_subtraction_stars_img(org_img, star_list, file, parallel)
         else:
             kernel_stars = BigDiff.find_subtraction_stars_img(org_img, star_list)
 
@@ -193,10 +193,10 @@ class BigDiff:
         return
 
     @staticmethod
-    def ois_difference(file, out_name, header, parallel=False):
+    def ois_difference(filepath, out_name, header, parallel=False):
         """ This function will run the c code oisdifference
 
-        :parameter file - The img file path before differencing
+        :parameter filepath - The img file path before differencing
         :parameter out_name - The file path for the differenced file
         :parameter header - The header of the image
 
@@ -212,11 +212,10 @@ class BigDiff:
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
 
         if parallel:
-            file_name = os.path.basename(file)
+            file_name = os.path.basename(filepath) # get the filename without the path
             differenced_img_name = os.path.basename(out_name)
-            ref = 'ref.txt'
-            refstars = os.path.basename(filename) # get the filename without the path
-            refstars = os.path.splitext(refstars) # splits the ext from filename
+            ref = 'ref.txt' 
+            refstars = os.path.splitext(file_name) # splits the ext from filename
             refstars = refstars + '.txt' # add the .txt ext
 
             command = './parallel_ois.out ' +\
@@ -240,6 +239,7 @@ class BigDiff:
         fits.writeto(differenced_img_name, dimg, header, overwrite=True)
 
         # move the differenced file to the difference directory
+        # TODO: Consider using shutils instead
         os.system('mv '+ differenced_img_name + ' ' + out_name)
 
         # change back to the working directory
@@ -268,6 +268,7 @@ class BigDiff:
 
         Utils.log("running prep_ois. cwd: " + os.getcwd(), "debug")
         # compile the oisdifference.c code
+        # TODO: Consider using shutils
         os.system('cp ' + codebase + Configuration.CODE_DIFFERENCE_DIRECTORY)
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
 
