@@ -272,10 +272,16 @@ class BigDiff:
         os.system('cp ' + codebase + Configuration.CODE_DIFFERENCE_DIRECTORY)
         os.chdir(Configuration.CODE_DIFFERENCE_DIRECTORY)
 
-        ## CONSIDER ADDING Check OS if Ubuntu try:
-        #os.system('gcc oisdifference.c -lcfitsio -lm')
-        ## IF macOS try:
-        os.system('gcc `pkg-config --cflags --libs cfitsio` '+ codebase + '-o ' + exec_name)
+        ## Check if the system is darwin (macOS) to change calls to libraries for cfitsio
+        if os.sys.platform == 'darwin':
+            Utils.log("System is darwin.", "debug")
+            system_command = 'gcc `pkg-config --cflags --libs cfitsio` '+ codebase + '-o ' + exec_name
+        else:
+            Utils.log("System is not darwin.", "debug")
+            system_command = 'gcc ' + codebase + ' -lcfitsio -lm -o ' + exec_name
+
+        os.system(system_command)
+
         os.chdir(Configuration.WORKING_DIRECTORY)
 
         # prepare the master frame
