@@ -1,5 +1,4 @@
-from streamlit import header
-
+import pandas as pd
 from config import Configuration
 from libraries.utils import Utils
 import numpy as np
@@ -12,7 +11,10 @@ from astropy.io import fits
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 import twirl
+from photutils.detection import DAOStarFinder
 from astropy.wcs import WCS
+from astropy.stats import SigmaClip
+from photutils.background import Background2D, MedianBackground
 from scipy.interpolate import griddata
 import astroalign as aa
 import matplotlib
@@ -22,9 +24,8 @@ matplotlib.use('TkAgg')
 class Preprocessing:
 
     @staticmethod
-    def mk_bias(image_directory, bias_overwrite, combine_type='mean'):
+    def mk_bias(bias_overwrite, combine_type='mean'):
         """ This function will make the master bias frame using the provided image list and desired method.
-        :parameter image_directory - a directory where the images reside for combination
         :parameter bias_overwrite - Y/N if you want to force an overwrite for the bias frame
         :parameter combine_type - Right now the combination type is mean, but it can be updated for whatever you
                                 method is desired.
@@ -35,52 +36,100 @@ class Preprocessing:
         # set the master bias file name
         file_name = 'bias' + Configuration.FILE_EXTENSION
 
+        # check to see if the master bias frame exists, and if it does save some time by skipping
         if (os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0) | (bias_overwrite == 'Y'):
 
             if combine_type == 'mean':
+                # check if the temporary files exist
+                chk_bias_list = Utils.get_file_list(Configuration.BIAS_DIRECTORY, Configuration.FILE_EXTENSION)
+
                 # get the image list
-                image_list = Utils.get_all_files_per_date(Configuration.BIAS_DIRECTORY,
-                                                          Configuration.FILE_EXTENSION)
+                images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'bias_list.csv', sep=',')
+                image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.File, axis=1).to_list()
+
                 # determine the number of loops we need to move through for each image
                 nfiles = len(image_list)
 
-                # update the log
-                Utils.log("Generating a master bias frame from multiple files using a mean combination. There are "
-                          + str(nfiles) + " images to combine.", "info")
+                if len(chk_bias_list) ==0:
 
-                for kk in range(0, nfiles):
-                    # read in the bias frame
-                    bias_tmp = fits.getdata(image_list[kk]).astype('float')
+                    # update the log
+                    Utils.log("Generating a master bias frame from multiple files using a mean combination. There are "
+                        + str(nfiles) + " images to combine.", "info")
 
-                    # initialize if it is the first file, otherwise....
-                    if kk == 0:
-                        bias_image = bias_tmp
-                    else:
-                        bias_image = bias_image + bias_tmp
+                     # set the temporary number file count
+                     tmp_num = 0
 
-                # generate the mean bias file
-                bias_image = bias_image / nfiles
+                    # pull the header information from the first file of the set
+                    bias_header = fits.getheader(image_list[0])
 
-                # pull the header information from the first file of the set
-                bias_header = fits.getheader(image_list[0])
+                    for kk in range(0, nfiles):
+                        # read in the bias frame
+                        bias_tmp = fits.getdata(image_list[kk]).astype('float')
 
+                        # initialize if it is the first file, otherwise....
+                        try:
+                            bias_image = bias_image + bias_tmp
+                        except:
+                            bias_image = bias_tmp
+
+                        # update the log to keep an eye on progress
+                        if (kk % 20) == 0:
+                            Utils.log(str(kk+1) + " files read in. " + 
+                                      str(nfiles - kk -1) + "files remain.", "info")
+
+                # write out the temporary files to save memory when possible
+                if ((kk % 100 ==0) & (kk > 0)) | (kk == nfiles - 1 ):
+                    # update the log
+                    Utils.log("Writing temporary file " + str(tmp_num) + ". " +
+                              str(nfiles - kk - 1) + " files remain.", "info")
+
+                    # write out the temporary file
+                    fits.writeto(Configuration.BIAS_DIRECTORY + str(tmp_num) + "_tmp_bias.fits",
+                                 bias_image, bias_header, overwrite=True)
+                    tmp_num = tmp_num + 1
+                    del bias_image # save memory
+                del bias_tmp # save memory
+            else:
+                Utils.log("Temporary bias files found. Skipping generating files. "
+                          "Delete them if you need to!", "info")
+            # get the temporary file list
+            tmp_bias_list = Utils.get_file_list(Configuration.BIAS_DIRECTORY, Configuration.FILE_EXTENSION)
+
+            # combine all of the temporary files
+            for kk in range (0, len(tmp_bias_list)):
+                # read in the bias frame
+                bias_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + tmp_bias_list[kk]).astype('float')
+
+                # initialize if it is the first file, otherwise....
+                try:
+                    bias_image_fin = bias_image_fin + bias_tmp
+                except:
+                    bias_image_fin = bias_tmp
+            del bias_tmp
+
+            # generate the mean bias file
+            bias_image_mean = bias_image _fin / nfiles
+            del bias_image_fin
+
+                # update the header with relevant information
                 bias_header['BIAS_COMB'] = 'mean'
                 bias_header['NUM_BIAS'] = nfiles
 
                 # write the image out to the master directory
                 fits.writeto(Configuration.CALIBRATION_DIRECTORY + file_name,
-                             bias_image, bias_header, overwrite=True)
+                             bias_image_mean, bias_header, overwrite=True)
             else:
                 Utils.log("Specific bias-combination method is not available, try again.", "info")
         else:
-            bias_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
+            # the bias frame already exists, so go ahead and read that in
+            bias_image_mean = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
 
-        return bias_image
+        return bias_image_mean
 
     @staticmethod
-    def mk_dark(image_directory, overwrite_dark, combine_type='median'):
+    def mk_dark(time_scale, overwrite_dark, combine_type='median'):
         """ This function will make the master dark frame using the provided image list.
-        :parameter image_directory - a directory where the images reside for combination
+        :time_scale - the length of the exposure for the dark frames
         :parameter overwrite_dark - Y/N if you want to force the current file to be overwritten
         :parameter combine_type - Either median or mean depending on how you want to combine the files
 
@@ -88,68 +137,106 @@ class Preprocessing:
         """
 
         # make the file name
-        file_name = 'dark' + Configuration.FILE_EXTENSION
+        file_name = str(time_scale) + 's_dark_' + Configuration.FILE_EXTENSION
 
-        if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0:
+        if (os.path.isfile(Configuration.CALIBRATION_DIRECTORY + file_name) == 0) | (overwrite_dark == 'Y'):
 
             if combine_type == 'mean':
+                # check if the temporary files exist
+                check_dark_list = Utils.get_file_list(Configuration.DARK_DIRECTORY,
+                                                      str(time_scale) + Configuration.FILE_EXTENSION)
+
                 # get the image list
-                image_list = Utils.get_all_files_per_date(Configuration.DARKS_DIRECTORY, Configuration.FILE_EXTENSION)
+                images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'dark_list.csv', sep=',')
+                image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.Files, axis=1).to_list()
 
-                # determine the number of loops we need to move through for each image
                 nfiles = len(image_list)
+                if len(chk_dark_list) == 0:
 
-                # pull in the bias frame
-                bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, bias_overwrite='N', combine_type='mean')
+                    # pull in the bias frame
+                    bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, combine_type='mean')
 
-                # update the log
-                Utils.log("Generating a master dark frame from multiple files using a mean combination. There are "
+                    # update the log
+                    Utils.log("Generating a master dark frame for time scale " + str(time_scale) +
+                    "s from multiple files using a mean combination. There are "
                           + str(nfiles) + " images to combine.", "info")
 
-                for kk in range(0, nfiles):
-                    # read in the dark frame
-                    dark_tmp = fits.getdata(image_list[kk]).astype('float')
-                    dark_header = fits.getheader(image_list[kk])
+                    # set the temporary number file count
+                    tmp_num = 0
 
-                    # for scaling purposes, we will pull the exp and scale to 300s
-                    try:
-                        exp_time = dark_header['EXPTIME']
-                        if exp_time != 300.:
-                            exp_time = 300.
-                    except:
-                        exp_time = 300.
+                    # pull the header information from the first file of the set
+                    dark_header = fits.getheader(image_list[0])
 
-                    # initialize if it is the first file, otherwise....
-                    if kk == 0:
-                        dark_image = dark_tmp - bias
+                    for kk in range(0, nfiles):
+                        # read in the dark frame
+                        dark_tmp = fits.getdata(image_list[kk]).astype('float')
+
+                        # initialize if it is the first file, otherwise....
+                        try:
+                            dark_image = (dark_image - bias) + dark_tmp
+                        except:
+                            dark_image = dark_tmp - bias
+
+                        # update the log to keep an eye on progress
+                        if (kk % 20) == 0:
+                            Utils.log(str(kk+1) + " files read in. " +
+                                      str(nfiles - kk - 1) + " files remain", "info")
+
+                        # write out the temporary files to save memory when possible
+                        if ((kk % 100 == 0) & (kk > 0)) | (kk == nfiles -1):
+                            #update the log
+                            Utils.log("Writing temporary file " + str(tmp_num) + ". " + 
+                                      str(nfiles - kk - 1) + " files remain", "info")
+
+                            # write out the temporary file
+                            fits.writeto(Configuration.DARK_DIRECTORY + str(tmp_num) + "_"
+                                         + str(time_scale) + "s" + "_tmp_dark.fits",
+                                         dark_image, dark_header, overwrite=True)
+                            del dark_image # save memory
+                        del dark_tmp # save memory
                     else:
-                        dark_image = ((dark_image - bias) * (exp_time / 300.)) + dark_tmp
+                        Utils.log("Temporary dark fiels found. Skipping generating files. "
+                                  "Delete them if you need to!", "info")
+                        # get the temporary file list
+                        tmp_dark_list = Utils.get_file_list(Configuration.DARK_DIRECTORY, Configuration.FILE_EXTENSION)
 
-                # generate the mean dark file
-                dark_image = dark_image / nfiles
+                        # combine all of the temporary files
+                        for kk in range(0, len(tmp_dark_list)):
+                            # read in the bias frame
+                            dark_tmp = fits.getdata(Configuration.BIAS_DIRECTORY + tmp_dark_list[kk]).astype('float')
 
-                # pull the header information from the first file of the set
-                dark_header = fits.getheader(image_list[0])
+                            # initialize if it is the first file, otherwise....
+                            try:
+                                dark_image_fin = dark_image_fin + dark_tmp
+                            except:
+                                dark_image_fin = dark_tmp
+                        del dark_tmp
 
-                #dark_header['EXPTIME'] = 300
+                        # generate the mean dark file
+                        dark_image_mean = dark_image_fin / nfiles
+                        del dark_image_fin
+
+                        # update the header with relevant information
                 dark_header['DARK_COMB'] = 'mean'
                 dark_header['NUM_DARK'] = nfiles
-                dark_header['BIAS_SUBT'] = 'Y'
+                dark_header['EXPTIME'] = time_scale
 
                 # write the image out to the master directory
                 fits.writeto(Configuration.CALIBRATION_DIRECTORY + file_name,
-                             dark_image, dark_header, overwrite=True)
+                             dark_image_mean, dark_header, overwrite=True)
             else:
-                Utils.log("The dark-combination type requested is not allowed. Please try again.", "info")
+                Utils.log("Specific bias-combination method is not available, try again.", "info")
         else:
-            dark_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
+            # the bias frame already exists, so go ahead and read that in
+            dark_image_mean = fits.getdata(Configuration.CALIBRATION_DIRECTORY + file_name, 0)
 
-        return dark_image
+        return dark_image_mean
 
     @staticmethod
-    def mk_flat(image_directory, combine_type='mean'):
+    def mk_flat(flat_exp=5, dark_exp=300):
         """ This function will make the master flat frame using the provided image list.
-        :parameter image_directory - a directory where the images reside for combination
+        :parameter flat_exp - The exposure time for the flat frames
+        :parameter dark_exp - The exposure time for the dark frames
         :parameter combine_type - Mean/Median depending on how you want to combine the flat frame
 
         :return - The flat field for the given date is returned and written to the calibration directory
@@ -158,204 +245,97 @@ class Preprocessing:
         if os.path.isfile(Configuration.CALIBRATION_DIRECTORY + "flat.fits") == 0:
 
             # read in the bias file
-            bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, bias_overwrite='N', combine_type='mean')
-            dark = Preprocessing.mk_dark(Configuration.DARKS_DIRECTORY, overwrite_dark='N', combine_type='mean')
+            bias = Preprocessing.mk_bias(bias_overwrite='N', combine_type='mean')
+            dark = Preprocessing.mk_dark(overwrite_dark='N', combine_type='mean')
+
             # get the image list
-            image_list = Utils.get_all_files_per_date(Configuration.FLATS_DIRECTORY, Configuration.FILE_EXTENSION)
+            images = pd.read_csv(Configuration.CALIBRATION_DIRECTORY + 'flat_list.csv', sep=',')
+            image_list = images.apply(lambda x: Configuration.RAW_DIRECTORY + x.Date + x.Files, axis=1).to_list()
 
-            if combine_type == 'median':
+            # determine the number of loops we need to move through for each image
+            nfiles = len(image_list)
+            nbulk = 30
 
-                # determine the number of loops we need to move through for each image
-                nfiles = len(image_list)
-                nbulk = 20
+            # get the integer and remainder for the combination
+            full_bulk = nfiles // nbulk
+            part_bulk = nfiles % nbulk
 
-                # get the integer and remainder for the combination
-                full_bulk = nfiles // nbulk
-                part_bulk = nfiles % nbulk
-
-                if part_bulk > 0:
-                    hold_bulk = full_bulk + 1
-                else:
-                    hold_bulk = full_bulk
-
-                # here is the 'holder'
-                hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_X, Configuration.AXS_Y))
-                hold_data_names = []
-
-                # update the log
-                Utils.log("Generating a master flat field from multiple files in bulks of " + str(nbulk) +
-                          " images. There are " + str(nfiles) + " images to combine, which means there should be " +
-                          str(hold_bulk) + " mini-files to combine.", "info")
-
-                for kk in range(0, hold_bulk):
-
-                    # loop through the images in sets of nbulk
-                    block_hold_names = []
-
-                    if kk < full_bulk:
-                        # generate the image holder
-                        block_hold = np.ndarray(shape=(nbulk, Configuration.AXS_X, Configuration.AXS_Y))
-
-                        # generate the max index
-                        mx_index = nbulk
-                    else:
-                        # generate the image holder
-                        block_hold = np.ndarray(shape=(part_bulk, Configuration.AXS_X, Configuration.AXS_Y))
-
-                        # generate the max index
-                        mx_index = part_bulk
-
-                    # make the starting index
-                    loop_start = kk * nbulk
-                    idx_cnt = 0
-
-                    Utils.log("Making mini-flat field frame number " + str(kk) + ".", "info")
-
-                    # now loop through the images
-                    for jj in range(loop_start, mx_index + loop_start):
-
-                        # read in the flat file
-                        flat_tmp, flat_head = fits.getdata(image_list[jj], header=True)
-                        Utils.log(f"Reading: {image_list[jj]}", "info")
-                        try:
-                            flat_exp = flat_head['EXPTIME']
-                            if flat_exp != 5.:
-                                flat_exp = 5.
-                        except:
-                            flat_exp = 5. ##ORGIGINAL: 20.
-
-                        # get the scale factor for the dark frame
-                        dark_scale = 300. / flat_exp
-                        # remove the bias frame from the temporary flat field
-                        flat_tmp_bias = ((flat_tmp - bias) - (dark / dark_scale)) / flat_exp
-
-                        # clip the flat field
-                        flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
-
-                        # put the image into the block_hold files
-                        #block_hold[idx_cnt] = flat_tmp_bias_clip
-                        block_hold_name = "flat_block_tmp_" + str(idx_cnt).zfill(3)
-
-                        block_hold_names.append(block_hold_name)
-
-                        fits.writeto(Configuration.CALIBRATION_DIRECTORY + block_hold_name + ".fits",
-                             flat_tmp_bias_clip, flat_head, overwrite=True)
-
-                        # increase the iteration
-                        idx_cnt += 1
-
-                    Utils.log(f"Median for block hold files: \n {block_hold_names}", "info")
-
-                    # median the data into a single file
-                    for idx, block_hold_name in enumerate(block_hold_names):
-                        block_hold_data = fits.getdata(Configuration.CALIBRATION_DIRECTORY+block_hold_name + ".fits")
-                        block_hold[idx] = block_hold_data
-
-                    #hold_data[kk] = np.median(block_hold, axis=0)
-                    hold_data_name = "flat_hold_data_" + str(kk).zfill(3)
-                    hold_data_names.append(hold_data_name)
-                    hold_data_data = np.median(block_hold, axis=0)
-
-                    # Release block_hold
-                    block_hold = None
-
-                    # write hold_data to file
-                    fits.writeto(Configuration.CALIBRATION_DIRECTORY + hold_data_name + ".fits",
-                                 hold_data_data, overwrite=True)
-
-
-                Utils.log(f"Median combine mini-images from: \n {hold_data_names}", "info")
-                # median the mini-images into one large image
-                for idx, hold_data_name in enumerate(hold_data_names):
-                    hold_data_data = fits.getdata(Configuration.CALIBRATION_DIRECTORY+hold_data_name+".fits")
-                    hold_data[idx] = hold_data_data
-
-                flat_image = np.median(hold_data, axis=0)
-
-                # Release hold_data
-                hold_data = None
-
-                nflat_image = flat_image / np.median(flat_image[5280:5280 + 5280, 3960:3960 + 1320])
-
-                # what are the sizes of each chip (not including the over scan)?
-                # chip_x_size = 1320
-                # chip_y_size = 5280
-
-                # move through x and y
-                # for x in range(0, Configuration.AXS_X, chip_x_size):
-                #     for y in range(0, Configuration.AXS_Y, chip_y_size):
-                #         # put the clipped image into the holder image
-                #         nflat_image[y:y + chip_y_size, x:x + chip_x_size] = (
-                #                 flat_image[y:y + chip_y_size, x:x + chip_x_size] /
-                #                 np.median(flat_image[y:y + chip_y_size, x:x + chip_x_size]))
-
-                # pull the header information from the first file of the set
-                flat_header = fits.getheader(image_list[0])
-                flat_header['comb_typ'] = 'median'
-                flat_header['norm_pix'] = 'median'
-                flat_header['num_comb'] = len(image_list)
-                flat_header['mean_pix'] = np.mean(nflat_image)
-                flat_header['std_pix'] = np.std(nflat_image)
-                flat_header['max_pix'] = np.max(nflat_image)
-                flat_header['min_pix'] = np.min(nflat_image)
-                flat_header['mean'] = np.mean(flat_image)
-                flat_header['std'] = np.std(flat_image)
-                flat_header['max'] = np.max(flat_image)
-                flat_header['min'] = np.min(flat_image)
-
-                # write the image out to the master directory
-                fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat.fits",
-                             nflat_image, flat_header, overwrite=True)
+            if part_bulk > 0:
+                hold_bulk = full_bulk + 1
             else:
-                # here is the 'holder'
-                hold_data = np.zeros((Configuration.AXS_X, Configuration.AXS_Y))
+                hold_bulk = full_bulk
 
-                Utils.log("Making the flat frame using a mean combination.", "info")
+            # here is the 'holder'
+            hold_data = np.ndarray(shape=(hold_bulk, Configuration.AXS_Y, Configuration.AXS_X))
+
+            #update the log
+            Utils.log("Generating a master flat field from multiple files in bulks of "  + str(nbulk) + 
+                      " images. There are " + str(nfiles) + " images to combine, which means there should be " + 
+                      str(hold_bulk) + " mini-files to combine." , "info")
+
+            for kk in range(0, hold_bulk):
+
+                # loop through the images in sets of nbulk
+                if kk < full_bulk:
+                    #generate the image holder
+                    block_hold = np.ndarray(shape=(nbulk, Configuration.AXS_Y, Configuration.AXS_X))
+
+                    # generate the max index
+                    mx_index = nbulk
+                else:
+                    # generate the image holder
+                    block_hold = np.ndarray(shape=(part_bulk, Configuration.AXS_Y, Configuration.AXS_X))
+
+                    # generate the max index
+                    mx_index = part_bulk
+
+                # make the starting index
+                loop_start = kk * nbulk
+                idx_cnt = 0
+
+                Utils.log("Making mini-flat field frame number " + str(kk) + ".", "info")
 
                 # now loop through the images
-                for idx, image in enumerate(image_list):
+                for jj in range(loop_start, mx_index + loop_start):
 
                     # read in the flat file
-                    flat_tmp, flat_head = fits.getdata(image_directory + image, header=True)
-                    try:
-                        flat_exp = flat_head['EXPTIME']
-                        if flat_exp != 5.:
-                            flat_exp = 5.
-                    except:
-                        flat_exp = 5.
+                    flat_tmp, flat_head = fits.getdata(image_list[jj], header=True)
 
                     # get the scale factor for the dark frame
-                    dark_scale = 300. / flat_exp
-                    # remove the bias frame from the temporary flat field
-                    flat_tmp_bias = ((flat_tmp - bias) - (dark / dark_scale)) / flat_exp
+                    dark_scale = dark_exp / flat_exp
 
-                    # clip the flat field
-                    flat_tmp_bias_clip, flat_head = Preprocessing.clip_image(flat_tmp_bias, flat_head)
+                    # remove the bias frame from the temporary flat field and scale based on exposure time
+                    block_hold[idx_cnt] = ((flat_tmp - bias) -(dark / dark_scale))
 
-                    # read in the image directly into the block_hold
-                    hold_data += flat_tmp_bias_clip
+                    # increase the iteration
+                    idx_cnt += 1
 
-                # median the mini-images into one large image
-                flat_image = hold_data / float(len(image_list))
-                nflat_image = flat_image / np.median(flat_image)
+                # median the data into a single file
+                hold_data[kk] = np.median(block_hold, axis=0)
 
-                # pull the header information from the first file of the set
-                flat_header = fits.getheader(image_directory + image_list[0])
-                flat_header['comb_typ'] = 'mean'
-                flat_header['norm_pix'] = 'median'
-                flat_header['num_comb'] = len(image_list)
-                flat_header['mean_pix'] = np.mean(nflat_image)
-                flat_header['std_pix'] = np.std(nflat_image)
-                flat_header['max_pix'] = np.max(nflat_image)
-                flat_header['min_pix'] = np.min(nflat_image)
-                flat_header['mean'] = np.mean(flat_image)
-                flat_header['std'] = np.std(flat_image)
-                flat_header['max'] = np.max(flat_image)
-                flat_header['min'] = np.min(flat_image)
+            # median the mini-images into one large image
+            flat_image = np.median(hold_data, axis=0)
+            nflat_image = flat_image / np.median(flat_image[5950:5950 + 3900, 3200:3200 + 900])
 
-                # write the image out to the master directory
-                fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat_" + Configuration.DATE + ".fits",
-                             nflat_image, flat_header, overwrite=True)
+            # pull the header information from the first file of the set
+            flat_header = fits.getheader(image_list[0])
+            flat_header['comb_typ'] = 'median'
+            flat_header['median_val'] = np.median(flat_image[5950:5950 + 3900, 3200:3200 + 900])
+            flat_header['norm_pix'] = 'median'
+            flat_header['num_comb'] = len(image_list)
+            flat_header['mean_pix'] = np.mean(nflat_image)
+            flat_header['std_pix'] = np.std(nflat_image)
+            flat_header['max_pix'] = np.max(nflat_image)
+            flat_header['min_pix'] = np.min(nflat_image)
+            flat_header['mean'] = np.mean(flat_image)
+            flat_header['std'] = np.std(flat_image)
+            flat_header['max'] = np.max(flat_image)
+            flat_header['min'] = np.min(flat_image)
+
+            # write the image out to the master directory
+            fits.writeto(Configuration.CALIBRATION_DIRECTORY + "flat.fits",
+                         nflat_image, flat_header, overwrite=True)
+
         else:
             nflat_image = fits.getdata(Configuration.CALIBRATION_DIRECTORY + "flat.fits")
 
@@ -371,50 +351,101 @@ class Preprocessing:
         return img, header - The corrected image will be sent back
         """
 
-#        # get the approximate center of the image
-#        center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
-#        pixel = Configuration.PIXEL_SIZE * u.arcsec
-#        fov = np.max(np.shape(img)) * pixel.to(u.deg)
-#
-#        # now query the gaia region
-#        all_stars = twirl.gaia_radecs(center, 1.25 * fov)
-#
-#        # keep the isolated stars
-#        all_stars = twirl.geometry.sparsify(all_stars, 0.33) #Original: 0.01 degree = 0.6 arcmin 
-#
-#        # get the stars in the image
-#        xy = twirl.find_peaks(img)
-#        print(f"length of xy: {len(xy)}")
-#        # now compute the new wcs
-#        try:
-#            wcs = twirl.compute_wcs(xy[0:30], all_stars[0:30], tolerance=10)
-#        except ValueError:
-#            wcs = twirl.compute_wcs(xy[0:50], all_stars[0:50], tolerance=10)
-#
-#        # add the WCS to the header
-#        h = wcs.to_header()
-#
-#        for idx, v in enumerate(h):
-#             header[v] = (h[idx], h.comments[idx])
+        # get the approximate center of the image
+        center = SkyCoord(Configuration.RA, Configuration.DEC, unit=['deg', 'deg'])
+        pixel = Configuration.PIXEL_SIZE * u.arcsec
+        fov = np.max(np.shape(img)) * pixel.to(u.deg)
 
-        # add additional information such as exposure time and time of exposure
-        try:
-            header['DATE']
-            header['DATE-OBS'] = header['DATE']
-        except:
-            header['DATE-OBS'] = Time.now().iso # Look for better solution
+        # now query the gaia region
+        all_stars = twirl.gaia_radecs(center, 1.25 * fov)
 
-        try:
-            header['EXPTIME']
-        except:
-            header['EXPTIME'] = Configuration.EXP_TIME
+        # keep the isolated stars
+        all_stars = twirl.geometry.sparsify(all_stars, 0.01)[0:30] #Original: 0.01 degree = 0.6 arcmin 
+
+        # get the stars in the image
+        xy = twirl.find_peaks(img[500:,500:])[0:30] + 500
+
+        if len(xy) > 30:
+            # now compute the new wcs
+            wcs = twirl.compute_wcs(xy[0:30], all_stars[0:30], tolerance=10)
+
+            # add the WCS to the header
+            h = wcs.to_header()
+
+            for idx, v in enumerate(h):
+                header[v] = (h[idx], h.comments[idx])
+
+            # add additional information such as exposure time and time of exposure
+            try:
+                header['DATE']
+            except:
+                header['EXPTIME'] = Configuration.EXP_TIME
+                header['DATE'] = Time.now().iso
+        else:
+            Utils.log("Bad image!", "info")
+            header['BADIMAGE'] = 'Y'
 
         return img, header
 
     @staticmethod
     def sky_subtract(img, header, sky_write='N'):
+        """  The function has been updated to include the photutils background subtraction routine. 
+
+        :parameter img - The image to be cleaned
+        :parameter header - The header object to be updated
+        :parameter sky_write - Y/N if you want to write the residual background for de-bugging
+
+        :return img_sub, header - The cleaned image and updated header file
+        """
+        # set up the background clipping functions
+        sigma_clip = SigmaClip(sigma=3)
+        bkg_estimator = MedianBackground()
+
+        # find the most likely position of the cluster
+        daofind = DAOStarFinder(fwhm=3.0, threshold=50)
+        sources = daofind(img[3000:, 3000:])
+
+        # find the cluster
+        x_cen = (np.sum(sources[sources['flux'] > 0]['xcentroid'] * sources[sources['flux'] > 0]['flux']) /
+                 np.sum(sources[sources['flux'] > 0]['flux'])) + 3000
+        y_cen = (np.sum(sources[sources['flux'] > 0]['ycentroid'] * sources[sources['flux'] > 0]['flux']) /
+                 np.sum(sources[sources['flux'] > 0]['flux'])) + 3000
+
+        # make the masked image
+        mask_img = np.zeros((Configuration.AXS_Y, Configuration.AXS_X))
+
+        mask_img[int(y_cen - 1000):int(y_cen + 1000), int(x_cen - 1000):int(x_cen + 1000)] = 1  # TUC-47
+        if ((x_cen - 5200) - 200 > 0) & ((x_cen - 5200) > 0):
+            mask_img[int((y_cen - 500) - 200):int((y_cen - 500) + 200),
+            int((x_cen - 5200) - 200):int((x_cen - 5200) + 200)] = 1 # Other GC
+
+        # do the 2D background estimation
+        bkg = Background2D(img, (Configuration.PIX, Configuration.PIX), filter_size=(3, 3),
+                           sigma_clip=sigma_clip, bkg_estimator=bkg_estimator, mask=mask_img)
+        sky = bkg.background
+
+        # subtract the sky gradient and add back the median background
+        img_sub = img - sky
+        # fin_img = img_sub + np.quantile(sky, 0.25)
+
+        # update the header
+        header['sky_medn'] = bkg.background_median
+        header['sky_sig'] = bkg.background_rms_median
+        header['sky'] = np.quantile(sky, 0.25)
+        header['sky_sub'] = 'yes'
+
+        # if desired, write out the sky background to the working directory
+        if sky_write == 'Y':
+            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'sky_background' + Configuration.FILE_EXTENSION, sky, overwrite=True)
+            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img' + Configuration.FILE_EXTENSION, img, overwrite=True)
+            fits.writeto(Configuration.ANALYSIS_DIRECTORY + 'img_sub' + Configuration.FILE_EXTENSION, img_sub, header=header, overwrite=True)
+
+        return fin_img, header
+
+    @staticmethod
+    def sky_subtract_old(img, header, sky_write='N'):
         """  The function breaks the image into bxs x bxs sections to save memeory, then cleans each section
-        the sections are then recombined and smoothed to remove the transitions. The residual image is then subtracted
+        the sections are then recombined and smoothed to remove the transitions. The residual image is then subtractedAdd commentMore actions
         from the image and the header is updated appropriately.
 
         :parameter img - The image to be cleaned
@@ -678,8 +709,8 @@ class Preprocessing:
         return flat_div, header
 
     @staticmethod
-    def mk_nme(file, difference_image='N', image_clip='N', bias_subtract='N', dark_subtract="N",
-               flat_divide='N', sky_subtract='N', plate_solve='N'):
+    def mk_nme(file, difference_image='N', image_clip='N', sky_subtract='N', bias_subtract='N',
+               flat_divide='N', dark_subtract="N", plate_solve='N'):
         """ This function will create the appropriate name for the file based on while steps are taken.
         :parameter file - The string with the file name
         :parameter image_clip - Y/N if the image was clipped
@@ -705,7 +736,8 @@ class Preprocessing:
         # otherwise...
         if difference_image == 'N':
             # first replace the "raw" directory with the "clean" directory
-            file = file_name.replace("/raw/", "/clean/")
+            file_hld = file_name.split('/')
+            file = Configuration.CLEAN_DIRECTORY + file_hld[-2] + "/" + Configuration.FIELD + "/" + file_hld[-1]
             nme_hld = file.split('.fits')
 
             # update the name to be appropriate for what was done to the file

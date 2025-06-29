@@ -107,10 +107,11 @@ class Utils:
         sub_dir = os.listdir(path)
         dte_dir = []
         for f in sub_dir:
-            z = path + f + "/" + field + "/"
+            z = path + f + "/" # + field + "/" removed for based on how R+M named the fields
             try:
                 for x in os.listdir(z):
-                    if x.endswith(file_ext):
+                    if ((x.split('_')[0] + '_' + x.split('_')[1] == field) | 
+                            (x.split('_')[0] == field)): # x.endswith(file_ext):
                         files_no_ext.append(z + x)
                 dte_dir.append(f)
             except:

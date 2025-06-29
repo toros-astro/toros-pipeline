@@ -131,7 +131,7 @@ class Clean:
         # bias subtract if necessary
         if bias_subtract == 'Y':
             st = time.time()
-            bias = Preprocessing.mk_bias(Configuration.BIAS_DIRECTORY, bias_overwrite='N', combine_type='mean')
+            bias = Preprocessing.mk_bias(bias_overwrite='N', combine_type='mean')
             img, header = Preprocessing.bias_subtract(img, header)
             fn = time.time()
             Utils.log("Image bias corrected in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
@@ -141,12 +141,22 @@ class Clean:
         # dark subtract if necessary
         if dark_subtract == 'Y':
             st = time.time()
-            dark = Preprocessing.mk_dark(Configuration.DARKS_DIRECTORY, overwrite_dark='N', combine_type='mean')
+            dark = Preprocessing.mk_dark(300, overwrite_dark='N', combine_type='mean')
             img, header = Preprocessing.dark_subtract(img, header)
             fn = time.time()
             Utils.log("Image dark corrected in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
         else:
             Utils.log("Skipping dark correction....", "info")
+
+        # flat divide if necessary
+        if flat_divide == 'Y':
+            st = time.time()
+            flat = Preprocessing.mk_flat(5, 300)
+            img, header = Preprocessing.flat_divide(img, header)
+            fn = time.time()
+            Utils.log("Image flattened in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
+        else:
+            Utils.log("Skipping image flattening....", "info")
 
         if image_clip == 'Y':
             st = time.time()
@@ -155,16 +165,6 @@ class Clean:
             Utils.log("Image over scan removed in " + str(np.around(fn - st, decimals=2)) + "s.", "info")
         else:
             Utils.log("Skipping over scan removal...", "info")
-
-        # flat divide if necessary
-        if flat_divide == 'Y':
-            st = time.time()
-            flat = Preprocessing.mk_flat(Configuration.FLATS_DIRECTORY, combine_type='median')
-            img, header = Preprocessing.flat_divide(img, header)
-            fn = time.time()
-            Utils.log("Image flattened in " + str(np.around((fn - st), decimals=2)) + "s.", "info")
-        else:
-            Utils.log("Skipping image flattening....", "info")
 
         # sky subtract if necessary
         if sky_subtract == 'Y':

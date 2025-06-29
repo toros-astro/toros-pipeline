@@ -29,12 +29,10 @@ class Configuration:
     # steps to skip
     CLEAN_SKIP = 'N'
     WRITE_SKY = 'Y'
-    CALIBRATE_SKIP = 'N'
     MASTER_SKIP = 'N'
     DIFFERENCE_SKIP = 'N'
     PHOTOMETRY_SKIP = 'N'
     LIGHTCURVE_SKIP = 'N'
-    COLOR_SKIP = 'Y'
 
     # telescope information
     PIXEL_SIZE = 0.4959  #  0.47  # arcsec per pixel
@@ -64,7 +62,7 @@ class Configuration:
     RMS_UP_LIMIT = 0.02  # the upper limit on precision to use for the kernel stars
 
     # update sky subtraction specific information
-    PIX = 220
+    PIX = 55
 
     # a photometry configuration
     FWHM = 15.  # fwhm of the image
@@ -87,14 +85,14 @@ class Configuration:
 
     # input paths for data etc
     DATA_DIRECTORY = "/Volumes/datadrive/coldharbor/"
-    DARKS_DIRECTORY = DATA_DIRECTORY + "darks/"
-    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/"
-    FLATS_DIRECTORY = DATA_DIRECTORY + "flats/"
     RAW_DIRECTORY = DATA_DIRECTORY + "raw/"
     CLEAN_DIRECTORY = DATA_DIRECTORY + "clean/"
     REVIEW_DIRECTORY = DATA_DIRECTORY + "review/"
     MASTER_DIRECTORY = DATA_DIRECTORY + "master/"
     CALIBRATION_DIRECTORY = DATA_DIRECTORY + "calibration/"
+    BIAS_DIRECTORY = DATA_DIRECTORY + "bias/"
+    FLAT_DIRECTORY = DATA_DIRECTORY + "flats/"
+    DARK_DIRECTORY = DATA_DIRECTORY + "darks/"
     CENTROID_DIRECTORY = MASTER_DIRECTORY + "centroids/"
     LIGHTCURVE_DIRECTORY = DATA_DIRECTORY + "lc/"
     DIFFERENCED_DIRECTORY = DATA_DIRECTORY + "diff/"
@@ -104,7 +102,7 @@ class Configuration:
     # directory_list
     DIRECTORIES = [ANALYSIS_DIRECTORY, DATA_DIRECTORY, LOG_DIRECTORY, CALIBRATION_DIRECTORY,
                    QUERIES_DIRECTORY, CLEAN_DIRECTORY, MASTER_DIRECTORY, LIGHTCURVE_DIRECTORY,
-                   CENTROID_DIRECTORY, RAW_DIRECTORY, FLATS_DIRECTORY, BIAS_DIRECTORY, DARKS_DIRECTORY,
+                   CENTROID_DIRECTORY, RAW_DIRECTORY, BIAS_DIRECTORY, DARK_DIRECTORY, FLAT_DIRECTORY,
                    DIFFERENCED_DIRECTORY, CLEAN_DATE_DIRECTORY, REVIEW_DATE_DIRECTORY, CODE_DIFFERENCE_DIRECTORY]
 
     # BROKER CONFIGURATION SPECIFICS
